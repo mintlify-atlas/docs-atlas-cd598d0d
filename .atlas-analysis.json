@@ -1,0 +1,80 @@
+{
+  "projectType": "saas",
+  "projectName": "LangShazam",
+  "projectDescription": "Real-time spoken language detection service powered by OpenAI Whisper API",
+  "theme": "almond",
+  "primaryColor": "#95a9b3",
+  "lightColor": "#3c6074",
+  "darkColor": "#1f3647",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "supported-languages"]
+          },
+          {
+            "group": "Core Features",
+            "pages": ["features/real-time-detection", "features/websocket-streaming", "features/audio-processing"]
+          },
+          {
+            "group": "Architecture",
+            "pages": ["architecture/overview", "architecture/backend", "architecture/frontend"]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": ["deployment/overview", "deployment/requirements"]
+          },
+          {
+            "group": "Deployment Options",
+            "pages": ["deployment/docker", "deployment/kubernetes", "deployment/ec2", "deployment/render"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["deployment/environment-variables", "deployment/cors-setup"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": ["api/overview", "api/websocket", "api/metrics"]
+          },
+          {
+            "group": "Backend Components",
+            "pages": ["api/audio-processor", "api/websocket-manager", "api/server-metrics"]
+          },
+          {
+            "group": "Configuration",
+            "pages": ["api/settings", "api/servers"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time language detection from microphone audio",
+    "WebSocket-based streaming audio processing",
+    "OpenAI Whisper API integration for speech recognition",
+    "Server metrics and performance monitoring",
+    "Multi-platform deployment support (Docker, Kubernetes, EC2)",
+    "React-based web interface with visual feedback"
+  ],
+  "publicApiSurface": [
+    "GET /",
+    "GET /metrics",
+    "WebSocket /ws",
+    "AudioProcessor.process_audio()",
+    "WebSocketManager.handle_connection()",
+    "ServerMetrics.get_metrics_dict()"
+  ]
+}
