@@ -1,0 +1,286 @@
+---
+title: 'ServerMetrics'
+description: 'Server metrics collection and reporting class'
+---
+
+## Overview
+
+The `ServerMetrics` class handles server metrics collection and reporting, including connection tracking, processing times, CPU usage, and memory consumption.
+
+**Location**: `backend/src/metrics.py:10-61`
+
+## Class Definition
+
+```python
+class ServerMetrics:
+    """
+    Handles server metrics collection and reporting.
+    Includes connection tracing in metrics logging.
+    """
+```
+
+## Constructor
+
+```python
+def __init__(self)
+```
+
+Initializes the ServerMetrics instance with default values.
+
+### Instance Attributes
+
+<ParamField path="active_connections" type="int" default={0}>
+  Current number of active WebSocket connections. Incremented on connect, decremented on disconnect.
+</ParamField>
+
+<ParamField path="processing_times" type="deque" default="deque(maxlen=100)">
+  Rolling buffer of last 100 audio processing times in seconds. Used to calculate average processing time.
+</ParamField>
+
+<ParamField path="active_processes" type="int" default={0}>
+  Number of active background processes. Currently unused, always 0.
+</ParamField>
+
+<ParamField path="total_requests" type="int" default={0}>
+  Total number of requests received since server start. Incremented on each new connection.
+</ParamField>
+
+<ParamField path="errors" type="int" default={0}>
+  Total number of errors encountered. Incremented on processing failures.
+</ParamField>
+
+<ParamField path="cpu_cores" type="int" default="multiprocessing.cpu_count()">
+  Total number of CPU cores available to the server.
+</ParamField>
+
+### Example
+
+```python
+from metrics import ServerMetrics
+
+metrics = ServerMetrics()
+print(f"CPU cores: {metrics.cpu_cores}")
+```
+
+## Methods
+
+### log_current_metrics
+
+```python
+def log_current_metrics(self, connection_id: str = None)
+```
+
+Logs current server metrics with optional connection tracking.
+
+**Location**: `metrics.py:23-44`
+
+#### Parameters
+
+<ParamField path="connection_id" type="str" optional>
+  Optional connection identifier to include in log output. If provided, logs are prefixed with `[connection_id]`.
+</ParamField>
+
+#### Implementation Details
+
+Calculates and logs:
+- Average processing time from last 100 requests
+- Current memory usage using `psutil.Process().memory_info().rss`
+- Total CPU usage percentage using `psutil.cpu_percent()`
+- Per-core CPU usage using `psutil.cpu_percent(percpu=True)`
+- Effective cores used: `(cpu_percent / 100) * cpu_cores`
+
+#### Example Output
+
+```
+=== Server Metrics [a1b2c3d4] ===
+Active Connections: 2
+Active Processes: 0
+Total Requests: 150
+Errors: 3
+Avg Processing Time: 2.34s
+Memory Usage: 128.50MB
+Total CPU Usage: 45.2%
+CPU Cores: 4
+Per-Core Usage: ['42.1%', '48.3%', '43.7%', '46.8%']
+Effective Cores Used: 1.8 of 4
+====================
+```
+
+#### Example Usage
+
+```python
+# Log metrics without connection ID
+metrics.log_current_metrics()
+
+# Log metrics with connection ID
+metrics.log_current_metrics(connection_id="a1b2c3d4")
+```
+
+### get_metrics_dict
+
+```python
+def get_metrics_dict(self)
+```
+
+Returns current metrics as a dictionary suitable for API responses.
+
+**Location**: `metrics.py:46-61`
+
+#### Returns
+
+Returns a dictionary with the following structure:
+
+```python
+{
+    "active_connections": 2,
+    "active_processes": 0,
+    "total_requests": 150,
+    "errors": 3,
+    "avg_processing_time": 2.34,
+    "memory_usage_mb": 128.5,
+    "cpu_total_percent": 45.2,
+    "cpu_per_core": [42.1, 48.3, 43.7, 46.8],
+    "total_cpu_cores": 4,
+    "effective_cores_used": 1.81
+}
+```
+
+<ResponseField name="active_connections" type="int">
+  Current number of active WebSocket connections
+</ResponseField>
+
+<ResponseField name="active_processes" type="int">
+  Number of active background processes (currently always 0)
+</ResponseField>
+
+<ResponseField name="total_requests" type="int">
+  Total requests since server start
+</ResponseField>
+
+<ResponseField name="errors" type="int">
+  Total errors since server start
+</ResponseField>
+
+<ResponseField name="avg_processing_time" type="float">
+  Average processing time in seconds from last 100 requests. Returns 0 if no requests processed.
+</ResponseField>
+
+<ResponseField name="memory_usage_mb" type="float">
+  Current memory usage in megabytes (RSS)
+</ResponseField>
+
+<ResponseField name="cpu_total_percent" type="float">
+  Total CPU usage percentage (0-100)
+</ResponseField>
+
+<ResponseField name="cpu_per_core" type="list[float]">
+  Array of CPU usage percentages for each core
+</ResponseField>
+
+<ResponseField name="total_cpu_cores" type="int">
+  Total number of CPU cores available
+</ResponseField>
+
+<ResponseField name="effective_cores_used" type="float">
+  Effective cores utilized, calculated as `(cpu_total_percent / 100) * total_cpu_cores`
+</ResponseField>
+
+#### Example Usage
+
+From `main.py:46-49`:
+
+```python
+@app.get("/metrics")
+async def get_metrics():
+    """Endpoint to retrieve current server metrics"""
+    return metrics.get_metrics_dict()
+```
+
+```python
+# Get metrics dictionary
+metrics_dict = metrics.get_metrics_dict()
+print(f"Active connections: {metrics_dict['active_connections']}")
+print(f"Avg processing time: {metrics_dict['avg_processing_time']}s")
+```
+
+## Usage Patterns
+
+### Updating Connection Counts
+
+```python
+# On connection start
+metrics.active_connections += 1
+metrics.total_requests += 1
+
+# On connection end
+metrics.active_connections -= 1
+```
+
+### Recording Processing Times
+
+```python
+import time
+
+start_time = time.time()
+# ... process audio ...
+processing_time = time.time() - start_time
+metrics.processing_times.append(processing_time)
+```
+
+### Recording Errors
+
+```python
+try:
+    # ... process audio ...
+    pass
+except Exception as e:
+    metrics.errors += 1
+    raise
+```
+
+## Dependencies
+
+```python
+import os
+import psutil
+import multiprocessing
+import logging
+from collections import deque
+```
+
+### External Dependencies
+
+- **psutil**: System and process monitoring
+  - `psutil.cpu_percent()`: CPU usage measurement
+  - `psutil.Process().memory_info()`: Memory consumption
+
+- **collections.deque**: Efficient rolling buffer for processing times
+  - `maxlen=100`: Automatically discards old values when full
+
+## Performance Considerations
+
+### Processing Times Deque
+
+The `processing_times` deque has a maximum length of 100:
+- Automatically maintains the last 100 processing times
+- O(1) append and average calculation
+- Memory efficient (bounded size)
+- No manual cleanup required
+
+### CPU Metrics
+
+CPU metrics are calculated on-demand when `get_metrics_dict()` or `log_current_metrics()` is called:
+- `psutil.cpu_percent()`: Blocking call, may take ~0.1s
+- `psutil.cpu_percent(percpu=True)`: Returns array of per-core percentages
+- Consider caching if metrics endpoint is called frequently
+
+### Memory Metrics
+
+Memory usage is calculated from RSS (Resident Set Size):
+- Includes all memory in RAM
+- Does not include swapped memory
+- Converted from bytes to MB: `rss / 1024 / 1024`
+
+## Thread Safety
+
+The class is **not thread-safe**. Since FastAPI uses asyncio (single-threaded), this is not an issue for the current implementation. If using with threads, add locking mechanisms.

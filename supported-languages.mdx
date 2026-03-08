@@ -1,0 +1,257 @@
+---
+title: 'Supported Languages'
+description: 'Languages supported by LangShazam for real-time detection'
+---
+
+## Overview
+
+LangShazam uses OpenAI's Whisper model (`whisper-1`) for language detection, which supports **99 languages** across various language families. The system can accurately identify spoken language in real-time through audio streaming.
+
+<Note>
+Language detection works best with audio clips between 4-15 seconds. Longer or clearer audio generally results in more accurate detection.
+</Note>
+
+## Supported Languages
+
+Whisper supports the following languages:
+
+<AccordionGroup>
+  <Accordion title="A-E" icon="a">
+    - Afrikaans (af)
+    - Albanian (sq)
+    - Amharic (am)
+    - Arabic (ar)
+    - Armenian (hy)
+    - Assamese (as)
+    - Azerbaijani (az)
+    - Bashkir (ba)
+    - Basque (eu)
+    - Belarusian (be)
+    - Bengali (bn)
+    - Bosnian (bs)
+    - Breton (br)
+    - Bulgarian (bg)
+    - Burmese (my)
+    - Catalan (ca)
+    - Chinese (zh)
+    - Croatian (hr)
+    - Czech (cs)
+    - Danish (da)
+    - Dutch (nl)
+    - English (en)
+    - Estonian (et)
+  </Accordion>
+
+  <Accordion title="F-L" icon="f">
+    - Faroese (fo)
+    - Finnish (fi)
+    - French (fr)
+    - Galician (gl)
+    - Georgian (ka)
+    - German (de)
+    - Greek (el)
+    - Gujarati (gu)
+    - Haitian Creole (ht)
+    - Hausa (ha)
+    - Hawaiian (haw)
+    - Hebrew (he)
+    - Hindi (hi)
+    - Hungarian (hu)
+    - Icelandic (is)
+    - Indonesian (id)
+    - Italian (it)
+    - Japanese (ja)
+    - Javanese (jv)
+    - Kannada (kn)
+    - Kazakh (kk)
+    - Khmer (km)
+    - Korean (ko)
+    - Lao (lo)
+    - Latin (la)
+    - Latvian (lv)
+    - Lingala (ln)
+    - Lithuanian (lt)
+    - Luxembourgish (lb)
+  </Accordion>
+
+  <Accordion title="M-S" icon="m">
+    - Macedonian (mk)
+    - Malagasy (mg)
+    - Malay (ms)
+    - Malayalam (ml)
+    - Maltese (mt)
+    - Maori (mi)
+    - Marathi (mr)
+    - Mongolian (mn)
+    - Nepali (ne)
+    - Norwegian (no)
+    - Nynorsk (nn)
+    - Occitan (oc)
+    - Pashto (ps)
+    - Persian (fa)
+    - Polish (pl)
+    - Portuguese (pt)
+    - Punjabi (pa)
+    - Romanian (ro)
+    - Russian (ru)
+    - Sanskrit (sa)
+    - Serbian (sr)
+    - Shona (sn)
+    - Sindhi (sd)
+    - Sinhala (si)
+    - Slovak (sk)
+    - Slovenian (sl)
+    - Somali (so)
+    - Spanish (es)
+    - Sundanese (su)
+    - Swahili (sw)
+    - Swedish (sv)
+  </Accordion>
+
+  <Accordion title="T-Z" icon="t">
+    - Tagalog (tl)
+    - Tajik (tg)
+    - Tamil (ta)
+    - Tatar (tt)
+    - Telugu (te)
+    - Thai (th)
+    - Tibetan (bo)
+    - Turkish (tr)
+    - Turkmen (tk)
+    - Ukrainian (uk)
+    - Urdu (ur)
+    - Uzbek (uz)
+    - Vietnamese (vi)
+    - Welsh (cy)
+    - Yiddish (yi)
+    - Yoruba (yo)
+  </Accordion>
+</AccordionGroup>
+
+## Language Detection Response
+
+When audio is processed, LangShazam returns a response in the following format:
+
+```json
+{
+  "language": "en",
+  "confidence": 0.9,
+  "processing_time": 1.23,
+  "connection_id": "conn_abc123"
+}
+```
+
+### Response Fields
+
+<ResponseField name="language" type="string" required>
+  The ISO 639-1 language code of the detected language (e.g., "en" for English, "es" for Spanish)
+</ResponseField>
+
+<ResponseField name="confidence" type="number" required>
+  Confidence score for the detection (currently fixed at 0.9 as defined in `backend/src/audio_processor.py:62`)
+</ResponseField>
+
+<ResponseField name="processing_time" type="number" required>
+  Time taken to process the audio in seconds, including API call latency
+</ResponseField>
+
+<ResponseField name="connection_id" type="string" required>
+  Unique identifier for tracking the request through the system
+</ResponseField>
+
+## Detection Accuracy
+
+### Factors Affecting Accuracy
+
+Language detection accuracy depends on several factors:
+
+<CardGroup cols={2}>
+  <Card title="Audio Quality" icon="microphone">
+    Clear audio with minimal background noise produces better results
+  </Card>
+  <Card title="Audio Length" icon="clock">
+    4-15 seconds is optimal. Shorter clips may be less accurate
+  </Card>
+  <Card title="Speaker Clarity" icon="volume-high">
+    Clear pronunciation and natural speaking pace improve detection
+  </Card>
+  <Card title="Language Mixing" icon="language">
+    Single-language speech works best. Code-switching may confuse the model
+  </Card>
+</CardGroup>
+
+### Best Practices
+
+<Steps>
+  <Step title="Record in a quiet environment">
+    Minimize background noise for clearer audio capture
+  </Step>
+  
+  <Step title="Speak naturally">
+    Use normal speaking pace and volume
+  </Step>
+  
+  <Step title="Provide sufficient context">
+    Speak for at least 4 seconds to give the model enough data
+  </Step>
+  
+  <Step title="Use one language at a time">
+    Avoid mixing languages within a single recording
+  </Step>
+</Steps>
+
+## Technical Limitations
+
+<Warning>
+Be aware of these current limitations:
+</Warning>
+
+### Audio Constraints
+
+- **Minimum audio length**: 4 seconds (4000ms)
+- **Maximum audio length**: 15 seconds (15000ms)
+- **Minimum audio size**: 20KB
+- **Audio format**: MP4 format sent to API
+- **Sample rate**: 16000 bits per second
+
+These constraints are defined in `backend/src/config/settings.py:26` and help ensure optimal detection quality.
+
+### Concurrent Processing
+
+The backend limits concurrent OpenAI API calls to **3 simultaneous requests** to manage rate limits and costs. Additional requests are queued automatically (see `backend/src/audio_processor.py:17`).
+
+### Dialect Detection
+
+Whisper detects the primary language but may not distinguish between regional dialects or accents. For example:
+- American English vs. British English = both detected as "en"
+- European Spanish vs. Latin American Spanish = both detected as "es"
+- Mandarin vs. Cantonese = both may be detected as "zh"
+
+## Error Handling
+
+If language detection fails, you'll receive an error response:
+
+```json
+{
+  "error": "Error description",
+  "connection_id": "conn_abc123"
+}
+```
+
+Common error scenarios:
+- Audio too short (< 4 seconds)
+- Audio too long (> 15 seconds)
+- OpenAI API rate limits
+- Network connectivity issues
+- Invalid audio format
+
+## Need More Information?
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Get started with LangShazam
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Detailed API documentation
+  </Card>
+</CardGroup>

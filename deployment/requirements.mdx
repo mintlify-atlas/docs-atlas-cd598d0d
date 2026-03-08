@@ -1,0 +1,269 @@
+---
+title: System Requirements
+description: Prerequisites and dependencies for deploying LangShazam
+---
+
+Before deploying LangShazam, ensure your environment meets these requirements.
+
+## Core Requirements
+
+### Python Environment
+
+<Note>
+LangShazam requires Python 3.9 or higher. The official Docker image uses Python 3.9-slim.
+</Note>
+
+From `backend/deployment/docker/Dockerfile:1`:
+```dockerfile
+FROM python:3.9-slim
+```
+
+### Python Dependencies
+
+The following packages are required (from `backend/requirements.txt`):
+
+```txt
+fastapi==0.109.0
+uvicorn==0.27.0
+openai==1.66.3
+psutil==5.9.8
+python-multipart==0.0.9
+websockets==12.0
+```
+
+**Key Dependencies:**
+- **FastAPI**: Modern web framework for building APIs
+- **Uvicorn**: ASGI server for running the application
+- **OpenAI SDK**: Integration with Whisper API for language detection
+- **WebSockets**: Real-time communication support
+- **python-multipart**: File upload handling
+- **psutil**: System metrics monitoring
+
+## Platform-Specific Requirements
+
+### Docker Deployment
+
+<CardGroup cols={2}>
+  <Card title="Docker Engine" icon="docker">
+    Version 20.10 or higher
+  </Card>
+  <Card title="Docker Compose" icon="layer-group">
+    Version 2.0 or higher (optional)
+  </Card>
+</CardGroup>
+
+**Minimum System Resources:**
+- **CPU**: 1 core (2+ recommended)
+- **RAM**: 512 MB minimum, 1 GB recommended
+- **Disk**: 2 GB for image and logs
+- **Network**: Port 10000 available
+
+### Kubernetes Deployment
+
+**Prerequisites:**
+- Kubernetes cluster v1.24+
+- `kubectl` CLI configured
+- Docker registry access (ECR, Docker Hub, etc.)
+- Ingress controller (nginx recommended)
+
+**Cluster Resources** (from `kubernetes/manifests/deployment.yaml:31-36`):
+
+Per pod:
+```yaml
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+**Minimum Cluster Capacity:**
+- 2 replicas (default) × 500m CPU = 1 vCPU minimum
+- 2 replicas × 512 MB = 1 GB RAM minimum
+- Auto-scaling up to 10 replicas requires 5 vCPU and 5 GB RAM
+
+### EC2 Deployment
+
+**AWS Account Requirements:**
+- EC2 permissions
+- CloudFormation permissions
+- VPC and Security Group creation permissions
+- SSH key pair
+
+**Recommended Instance Types** (from `ec2/ec2-config.yaml:14`):
+```yaml
+InstanceType:
+  Default: t2.micro
+  AllowedValues: [t2.micro, t2.small, t2.medium, t3.micro, t3.small, t3.medium]
+```
+
+**Instance Resource Mapping:**
+| Instance Type | vCPU | RAM | Cost/Month | Best For |
+|---------------|------|-----|------------|----------|
+| t2.micro | 1 | 1 GB | ~$8.50 | Development |
+| t2.small | 1 | 2 GB | ~$17 | Light production |
+| t2.medium | 2 | 4 GB | ~$34 | Production |
+| t3.micro | 2 | 1 GB | ~$7.50 | Burst workloads |
+| t3.small | 2 | 2 GB | ~$15 | Production |
+
+**Software Requirements** (auto-installed via CloudFormation):
+- Amazon Linux 2
+- Docker Engine
+- Docker Compose v2.24.5+
+- Git
+- jq
+
+### Render Deployment
+
+<Note>
+Render manages all infrastructure automatically. No manual setup required.
+</Note>
+
+**Render Free Tier:**
+- 512 MB RAM
+- Shared CPU
+- Automatic sleep after 15 minutes of inactivity
+- Cold start time: 30-60 seconds
+
+**Render Paid Plans:**
+- Starting at $7/month
+- Dedicated resources
+- No automatic sleep
+- Faster deployment and scaling
+
+## API Keys and Secrets
+
+### OpenAI API Key (Required)
+
+<Warning>
+An OpenAI API key with Whisper API access is **required** for all deployments.
+</Warning>
+
+**How to get an OpenAI API key:**
+1. Sign up at [platform.openai.com](https://platform.openai.com)
+2. Navigate to API keys section
+3. Create a new secret key
+4. Ensure your account has credit/billing enabled
+
+**Whisper API Costs:**
+- $0.006 per minute of audio
+- Example: 1000 detections × 5 seconds = ~$0.50
+
+### Base64 Encoding for Kubernetes
+
+For Kubernetes deployments, encode your API key:
+
+```bash
+echo -n "your-api-key" | base64
+```
+
+Then add to `kubernetes/manifests/secrets.yaml:9`:
+```yaml
+openai-api-key: ${BASE64_ENCODED_OPENAI_API_KEY}
+```
+
+## Network Requirements
+
+### Ports
+
+| Port | Protocol | Purpose | Required |
+|------|----------|---------|----------|
+| 10000 | HTTP/WS | Application server | Yes |
+| 80 | HTTP | Web traffic (with proxy) | Optional |
+| 443 | HTTPS | Secure traffic (with SSL) | Optional |
+| 22 | SSH | Server access (EC2 only) | EC2 only |
+
+### Outbound Connectivity
+
+<Warning>
+Your deployment must have outbound HTTPS access to OpenAI's API:
+- `api.openai.com` (port 443)
+</Warning>
+
+### Firewall Rules
+
+**For EC2** (from `ec2/ec2-config.yaml:91-107`):
+```yaml
+SecurityGroupIngress:
+  - IpProtocol: tcp
+    FromPort: 22
+    ToPort: 22
+    CidrIp: 0.0.0.0/0  # Restrict in production
+  - IpProtocol: tcp
+    FromPort: 80
+    ToPort: 80
+    CidrIp: 0.0.0.0/0
+  - IpProtocol: tcp
+    FromPort: 443
+    ToPort: 443
+    CidrIp: 0.0.0.0/0
+  - IpProtocol: tcp
+    FromPort: 10000
+    ToPort: 10000
+    CidrIp: 0.0.0.0/0
+```
+
+<Warning>
+For production deployments, restrict SSH access (port 22) to your IP address only.
+</Warning>
+
+## Storage Requirements
+
+### Docker Volumes
+
+From `ec2/docker-compose.yml:40`:
+```yaml
+volumes:
+  app_logs:
+```
+
+- **Logs**: ~100 MB per day (varies with traffic)
+- **Docker image**: ~200 MB
+
+### Kubernetes Persistent Storage
+
+Not required for stateless deployments, but recommended for:
+- Log persistence
+- Metrics storage
+- Application state (if adding future features)
+
+## Health Check Requirements
+
+All deployments include health checks on the root endpoint.
+
+From `backend/deployment/docker/Dockerfile:17-18`:
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:$PORT/ || exit 1
+```
+
+**curl must be available** in the container for health checks to work.
+
+## Optional Requirements
+
+### SSL/TLS Certificates
+
+For production deployments with custom domains:
+- **Let's Encrypt**: Free, auto-renewable certificates
+- **AWS ACM**: Free for AWS resources
+- **Custom certificates**: Can be mounted in containers
+
+### Monitoring and Observability
+
+While not required, consider:
+- **Metrics endpoint**: Available at `/metrics` (built-in)
+- **Log aggregation**: CloudWatch, ELK, Datadog
+- **APM**: New Relic, Datadog, Prometheus
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Configure required environment variables
+  </Card>
+  <Card title="Choose Deployment" icon="rocket" href="/deployment/overview">
+    Select your deployment platform
+  </Card>
+</CardGroup>

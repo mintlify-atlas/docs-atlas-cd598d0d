@@ -1,0 +1,146 @@
+---
+title: 'Metrics Endpoint'
+description: 'Server health and performance monitoring endpoint'
+---
+
+## Endpoint
+
+```
+GET /metrics
+```
+
+Returns real-time server metrics including connection counts, processing times, CPU usage, and memory consumption.
+
+## Response
+
+```json
+{
+  "active_connections": 2,
+  "active_processes": 0,
+  "total_requests": 150,
+  "errors": 3,
+  "avg_processing_time": 2.34,
+  "memory_usage_mb": 128.5,
+  "cpu_total_percent": 45.2,
+  "cpu_per_core": [42.1, 48.3, 43.7, 46.8],
+  "total_cpu_cores": 4,
+  "effective_cores_used": 1.81
+}
+```
+
+## Response Fields
+
+<ResponseField name="active_connections" type="integer" required>
+  Number of currently active WebSocket connections
+</ResponseField>
+
+<ResponseField name="active_processes" type="integer" required>
+  Number of active background processes (currently unused, always 0)
+</ResponseField>
+
+<ResponseField name="total_requests" type="integer" required>
+  Total number of requests received since server start
+</ResponseField>
+
+<ResponseField name="errors" type="integer" required>
+  Total number of errors encountered since server start
+</ResponseField>
+
+<ResponseField name="avg_processing_time" type="number" required>
+  Average audio processing time in seconds, calculated from the last 100 requests
+</ResponseField>
+
+<ResponseField name="memory_usage_mb" type="number" required>
+  Current memory usage of the server process in megabytes (MB)
+</ResponseField>
+
+<ResponseField name="cpu_total_percent" type="number" required>
+  Total CPU usage as a percentage (0-100)
+</ResponseField>
+
+<ResponseField name="cpu_per_core" type="array" required>
+  Array of CPU usage percentages for each individual core
+  
+  ```json
+  [42.1, 48.3, 43.7, 46.8]
+  ```
+</ResponseField>
+
+<ResponseField name="total_cpu_cores" type="integer" required>
+  Total number of CPU cores available to the server
+</ResponseField>
+
+<ResponseField name="effective_cores_used" type="number" required>
+  Effective number of cores being utilized, calculated as `(cpu_total_percent / 100) * total_cpu_cores`
+</ResponseField>
+
+## Usage Examples
+
+### cURL
+
+```bash
+curl https://languagedetection-9l89.onrender.com/metrics
+```
+
+### JavaScript
+
+```javascript
+fetch('https://languagedetection-9l89.onrender.com/metrics')
+  .then(response => response.json())
+  .then(metrics => {
+    console.log('Active connections:', metrics.active_connections);
+    console.log('Average processing time:', metrics.avg_processing_time, 's');
+    console.log('Memory usage:', metrics.memory_usage_mb, 'MB');
+    console.log('CPU usage:', metrics.cpu_total_percent, '%');
+  });
+```
+
+### Python
+
+```python
+import requests
+
+response = requests.get('https://languagedetection-9l89.onrender.com/metrics')
+metrics = response.json()
+
+print(f"Active connections: {metrics['active_connections']}")
+print(f"Average processing time: {metrics['avg_processing_time']}s")
+print(f"Memory usage: {metrics['memory_usage_mb']}MB")
+print(f"CPU usage: {metrics['cpu_total_percent']}%")
+```
+
+## Implementation Details
+
+From `main.py:46-49`:
+
+```python
+@app.get("/metrics")
+async def get_metrics():
+    """Endpoint to retrieve current server metrics"""
+    return metrics.get_metrics_dict()
+```
+
+The endpoint calls `ServerMetrics.get_metrics_dict()` which computes metrics in real-time using:
+- `psutil.cpu_percent()` for CPU usage
+- `psutil.Process().memory_info()` for memory consumption
+- Rolling deque of last 100 processing times for average calculation
+
+See [ServerMetrics class](/api/server-metrics) for implementation details.
+
+## Monitoring and Alerts
+
+Use this endpoint to:
+- Monitor server health in real-time
+- Set up alerts for high error rates
+- Track processing time trends
+- Monitor resource utilization
+- Detect connection spikes
+
+## Update Frequency
+
+Metrics are updated in real-time:
+- `active_connections`: Updated on each WebSocket connect/disconnect
+- `total_requests`: Incremented on each new connection
+- `errors`: Incremented on processing errors
+- `processing_times`: Appended after each successful audio processing
+- CPU/memory metrics: Computed at request time

@@ -1,0 +1,382 @@
+---
+title: Docker Deployment
+description: Deploy LangShazam using Docker containers
+---
+
+Deploy LangShazam as a Docker container for portability and consistency across environments.
+
+## Overview
+
+The Docker deployment uses a multi-stage build with Python 3.9-slim as the base image, includes health checks, and exposes the application on port 10000.
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Docker Installed" icon="docker">
+    Docker Engine 20.10 or higher
+  </Card>
+  <Card title="OpenAI API Key" icon="key">
+    Valid API key with Whisper access
+  </Card>
+</CardGroup>
+
+## Dockerfile
+
+The official Dockerfile is located at `backend/deployment/docker/Dockerfile`:
+
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY src/ /app/src/
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PORT=10000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:$PORT/ || exit 1
+
+# Expose port
+EXPOSE $PORT
+
+# Run the application with uvicorn
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "10000"]
+```
+
+## Quick Start
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone <your-repo-url>
+    cd langshazam
+    ```
+  </Step>
+  
+  <Step title="Build the Docker Image">
+    ```bash
+    cd backend
+    docker build -t langshazam-backend -f deployment/docker/Dockerfile .
+    ```
+    
+    <Note>
+    The build context is the `backend` directory, not the `docker` subdirectory.
+    </Note>
+  </Step>
+  
+  <Step title="Run the Container">
+    ```bash
+    docker run -d \
+      --name langshazam \
+      -p 10000:10000 \
+      -e OPENAI_API_KEY=your_api_key_here \
+      langshazam-backend
+    ```
+  </Step>
+  
+  <Step title="Verify it's Running">
+    ```bash
+    curl http://localhost:10000/
+    ```
+    
+    Expected response:
+    ```json
+    {"message": "Server is running!"}
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+### Environment Variables
+
+Pass environment variables using `-e` flag:
+
+```bash
+docker run -d \
+  --name langshazam \
+  -p 10000:10000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e DEBUG=true \
+  -e LOGGING_LEVEL=INFO \
+  langshazam-backend
+```
+
+See [Environment Variables](/deployment/environment-variables) for all available options.
+
+### Port Mapping
+
+Map the container port to a different host port:
+
+```bash
+# Run on port 8080 instead of 10000
+docker run -d -p 8080:10000 -e OPENAI_API_KEY=sk-... langshazam-backend
+```
+
+### Volume Mounts
+
+Mount logs directory for persistence:
+
+```bash
+docker run -d \
+  --name langshazam \
+  -p 10000:10000 \
+  -e OPENAI_API_KEY=sk-... \
+  -v $(pwd)/logs:/app/logs \
+  langshazam-backend
+```
+
+## Using Docker Compose
+
+For easier management, use Docker Compose. Create a `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  langshazam:
+    build:
+      context: ./backend
+      dockerfile: deployment/docker/Dockerfile
+    container_name: langshazam
+    restart: always
+    ports:
+      - "10000:10000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEBUG=false
+      - LOGGING_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - app_logs:/app/logs
+
+volumes:
+  app_logs:
+```
+
+Then run:
+
+```bash
+export OPENAI_API_KEY=your_api_key
+docker-compose up -d
+```
+
+## Health Checks
+
+The container includes built-in health monitoring:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:$PORT/ || exit 1
+```
+
+Check health status:
+
+```bash
+docker ps
+# Look for "healthy" in the STATUS column
+
+# Or inspect detailed health:
+docker inspect --format='{{json .State.Health}}' langshazam | jq
+```
+
+## Container Management
+
+### View Logs
+
+```bash
+# Follow logs in real-time
+docker logs -f langshazam
+
+# View last 100 lines
+docker logs --tail 100 langshazam
+
+# View logs with timestamps
+docker logs -t langshazam
+```
+
+### Restart Container
+
+```bash
+docker restart langshazam
+```
+
+### Stop and Remove
+
+```bash
+docker stop langshazam
+docker rm langshazam
+```
+
+### Update to Latest Version
+
+```bash
+# Pull latest code
+git pull
+
+# Rebuild image
+cd backend
+docker build -t langshazam-backend -f deployment/docker/Dockerfile .
+
+# Stop old container
+docker stop langshazam
+docker rm langshazam
+
+# Start new container
+docker run -d --name langshazam -p 10000:10000 -e OPENAI_API_KEY=sk-... langshazam-backend
+```
+
+## Production Deployment
+
+### Using a Reverse Proxy
+
+For production, run behind nginx or traefik:
+
+**nginx configuration:**
+
+```nginx
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    location / {
+        proxy_pass http://localhost:10000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+### Resource Limits
+
+Limit CPU and memory usage:
+
+```bash
+docker run -d \
+  --name langshazam \
+  --memory="512m" \
+  --cpus="1.0" \
+  -p 10000:10000 \
+  -e OPENAI_API_KEY=sk-... \
+  langshazam-backend
+```
+
+### Auto-restart Policy
+
+```bash
+docker run -d \
+  --name langshazam \
+  --restart unless-stopped \
+  -p 10000:10000 \
+  -e OPENAI_API_KEY=sk-... \
+  langshazam-backend
+```
+
+**Restart policies:**
+- `no`: Don't restart automatically (default)
+- `on-failure`: Restart only if container exits with error
+- `always`: Always restart if stopped
+- `unless-stopped`: Always restart unless explicitly stopped
+
+## Docker Registry
+
+### Push to Docker Hub
+
+```bash
+# Tag the image
+docker tag langshazam-backend your-username/langshazam-backend:latest
+
+# Login
+docker login
+
+# Push
+docker push your-username/langshazam-backend:latest
+```
+
+### Push to AWS ECR
+
+```bash
+# Authenticate
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com
+
+# Tag
+docker tag langshazam-backend 123456789.dkr.ecr.us-east-1.amazonaws.com/langshazam:latest
+
+# Push
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/langshazam:latest
+```
+
+## Troubleshooting
+
+### Container Won't Start
+
+Check logs for errors:
+```bash
+docker logs langshazam
+```
+
+Common issues:
+- Missing `OPENAI_API_KEY`
+- Port 10000 already in use
+- Insufficient memory
+
+### Health Check Failing
+
+Enter the container to debug:
+```bash
+docker exec -it langshazam /bin/bash
+curl http://localhost:10000/
+```
+
+### High Memory Usage
+
+Monitor resource usage:
+```bash
+docker stats langshazam
+```
+
+Set memory limits if needed (see Resource Limits above).
+
+### Permission Errors
+
+If you get permission errors with volume mounts:
+```bash
+sudo chown -R 1000:1000 ./logs
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Configure all environment variables
+  </Card>
+  <Card title="CORS Setup" icon="shield" href="/deployment/cors-setup">
+    Configure CORS for your frontend
+  </Card>
+  <Card title="EC2 Deployment" icon="aws" href="/deployment/ec2">
+    Deploy to AWS EC2 with Docker Compose
+  </Card>
+  <Card title="Kubernetes" icon="kubernetes" href="/deployment/kubernetes">
+    Scale with Kubernetes
+  </Card>
+</CardGroup>

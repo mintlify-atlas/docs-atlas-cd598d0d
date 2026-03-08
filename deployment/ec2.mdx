@@ -1,0 +1,584 @@
+---
+title: AWS EC2 Deployment
+description: Deploy LangShazam to AWS EC2 using CloudFormation and Docker Compose
+---
+
+Deploy LangShazam to AWS EC2 with automated infrastructure provisioning using CloudFormation, Docker Compose orchestration, and Nginx reverse proxy.
+
+## Overview
+
+The EC2 deployment provides:
+- Automated infrastructure with CloudFormation
+- VPC, subnet, and security group configuration
+- Docker Compose for container orchestration
+- Nginx reverse proxy with SSL support
+- Auto-restart and health monitoring
+
+## Architecture
+
+```
+┌───────────────────────────────────────────────────┐
+│                    Internet                         │
+└───────────────────────┬───────────────────────────┘
+                       │
+                       │ Port 80/443
+                       │
+    ┌──────────────────▼───────────────────────────────┐
+    │              EC2 Instance                         │
+    │  ┌─────────────────────────────────────────┐  │
+    │  │      Nginx Reverse Proxy              │  │
+    │  │  - SSL/TLS termination                │  │
+    │  │  - WebSocket support                  │  │
+    │  └────────────────┬─────────────────────────┘  │
+    │                 │                                  │
+    │  ┌───────────────▼─────────────────────────┐  │
+    │  │   LangShazam Container (Port 10000)   │  │
+    │  │  - FastAPI application                │  │
+    │  │  - WebSocket handler                  │  │
+    │  │  - Health checks                      │  │
+    │  └─────────────────────────────────────────┘  │
+    └───────────────────────────────────────────────────┘
+```
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="AWS Account" icon="aws">
+    With EC2 and CloudFormation permissions
+  </Card>
+  <Card title="AWS CLI" icon="terminal">
+    Installed and configured
+  </Card>
+  <Card title="SSH Key Pair" icon="key">
+    EC2 key pair in your AWS region
+  </Card>
+  <Card title="OpenAI API Key" icon="key">
+    Valid API key with Whisper access
+  </Card>
+</CardGroup>
+
+## Deployment Files
+
+Located in `backend/deployment/ec2/`:
+- `ec2-config.yaml` - CloudFormation template
+- `docker-compose.yml` - Container orchestration
+- `nginx/conf/language-detector.conf` - Nginx configuration
+
+## Quick Start
+
+<Steps>
+  <Step title="Create CloudFormation Stack">
+    ```bash
+    aws cloudformation create-stack \
+      --stack-name language-detector \
+      --template-body file://backend/deployment/ec2/ec2-config.yaml \
+      --parameters ParameterKey=KeyName,ParameterValue=YOUR_KEY_NAME \
+                   ParameterKey=EnvironmentName,ParameterValue=prod \
+                   ParameterKey=InstanceType,ParameterValue=t2.micro
+    ```
+    
+    <Note>
+    Replace `YOUR_KEY_NAME` with your EC2 key pair name.
+    </Note>
+  </Step>
+  
+  <Step title="Wait for Stack Creation">
+    ```bash
+    aws cloudformation wait stack-create-complete --stack-name language-detector
+    ```
+    
+    This takes approximately 5-10 minutes.
+  </Step>
+  
+  <Step title="Get EC2 Public IP">
+    ```bash
+    EC2_IP=$(aws cloudformation describe-stacks \
+      --stack-name language-detector \
+      --query "Stacks[0].Outputs[?OutputKey=='PublicIP'].OutputValue" \
+      --output text)
+    
+    echo "EC2 instance created with IP: $EC2_IP"
+    ```
+  </Step>
+  
+  <Step title="SSH into Instance">
+    ```bash
+    ssh -i YOUR_KEY_NAME.pem ec2-user@$EC2_IP
+    ```
+  </Step>
+  
+  <Step title="Clone Repository and Deploy">
+    ```bash
+    # Clone your repository
+    git clone https://github.com/your-username/langshazam.git
+    cd langshazam/backend/deployment/ec2
+    
+    # Set OpenAI API key
+    export OPENAI_API_KEY=your_api_key_here
+    
+    # Start with Docker Compose
+    docker-compose up -d
+    ```
+  </Step>
+  
+  <Step title="Verify Deployment">
+    ```bash
+    # Check containers
+    docker-compose ps
+    
+    # Test locally
+    curl http://localhost/
+    
+    # Test from your machine
+    curl http://$EC2_IP/
+    ```
+  </Step>
+</Steps>
+
+## CloudFormation Template
+
+### Parameters
+
+From `ec2/ec2-config.yaml:4-27`:
+
+```yaml
+Parameters:
+  EnvironmentName:
+    Description: Environment name
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro, t2.small, t2.medium, t3.micro, t3.small, t3.medium]
+  
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+
+  SSHLocation:
+    Description: IP address range that can SSH to the EC2 instance
+    Type: String
+    Default: 0.0.0.0/0
+```
+
+<Warning>
+For production, restrict `SSHLocation` to your IP address instead of `0.0.0.0/0`.
+</Warning>
+
+### Security Group
+
+From `ec2/ec2-config.yaml:86-107`:
+
+```yaml
+AppSecurityGroup:
+  Type: AWS::EC2::SecurityGroup
+  Properties:
+    GroupDescription: Security group for Language Detector application
+    VpcId: !Ref VPC
+    SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref SSHLocation
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 10000
+        ToPort: 10000
+        CidrIp: 0.0.0.0/0
+```
+
+**Ports opened:**
+- **22**: SSH access
+- **80**: HTTP traffic
+- **443**: HTTPS traffic
+- **10000**: Direct application access (optional)
+
+### User Data Script
+
+The CloudFormation template automatically installs (from `ec2/ec2-config.yaml:118-138`):
+
+```bash
+#!/bin/bash -xe
+# Update system packages
+yum update -y
+
+# Install Docker
+amazon-linux-extras install docker -y
+systemctl start docker
+systemctl enable docker
+usermod -a -G docker ec2-user
+
+# Install Docker Compose
+curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# Install useful tools
+yum install -y git jq
+```
+
+## Docker Compose Configuration
+
+From `ec2/docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  language-detector:
+    build: 
+      context: ../../
+      dockerfile: deployment/docker/Dockerfile
+    container_name: language-detector
+    restart: always
+    ports:
+      - "10000:10000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOGGING_LEVEL=INFO
+      - MAX_CONNECTIONS=100
+      - MAX_AUDIO_SIZE_MB=5
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - app_logs:/app/logs
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/www:/var/www/html
+    depends_on:
+      - language-detector
+
+volumes:
+  app_logs:
+```
+
+**Key features:**
+- **Restart policy**: Containers auto-restart on failure
+- **Health checks**: Automatic monitoring
+- **Persistent logs**: Stored in Docker volume
+- **Nginx**: Reverse proxy with SSL support
+
+## Nginx Configuration
+
+From `ec2/nginx/conf/language-detector.conf`:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    access_log /var/log/nginx/language-detector.access.log;
+    error_log /var/log/nginx/language-detector.error.log;
+
+    location / {
+        proxy_pass http://language-detector:10000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+**Features:**
+- **WebSocket support**: Critical for real-time language detection
+- **Proxy headers**: Preserve client information
+- **Logging**: Access and error logs
+
+## SSL Setup with Let's Encrypt
+
+<Steps>
+  <Step title="Install Certbot">
+    ```bash
+    sudo amazon-linux-extras install epel -y
+    sudo yum install certbot -y
+    ```
+  </Step>
+  
+  <Step title="Stop Nginx Temporarily">
+    ```bash
+    cd ~/langshazam/backend/deployment/ec2
+    docker-compose stop nginx
+    ```
+  </Step>
+  
+  <Step title="Obtain Certificate">
+    ```bash
+    sudo certbot certonly --standalone \
+      -d your-domain.com \
+      --email your-email@example.com \
+      --agree-tos -n
+    ```
+  </Step>
+  
+  <Step title="Copy Certificates">
+    ```bash
+    sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem \
+      ~/langshazam/backend/deployment/ec2/nginx/ssl/
+    sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem \
+      ~/langshazam/backend/deployment/ec2/nginx/ssl/
+    
+    sudo chown ec2-user:ec2-user ~/langshazam/backend/deployment/ec2/nginx/ssl/*.pem
+    ```
+  </Step>
+  
+  <Step title="Update Nginx Configuration">
+    Edit `nginx/conf/language-detector.conf` and uncomment the SSL server block (lines 24-49), replacing `YOUR_DOMAIN` with your actual domain.
+  </Step>
+  
+  <Step title="Restart Nginx">
+    ```bash
+    docker-compose start nginx
+    ```
+  </Step>
+</Steps>
+
+### Auto-Renewal
+
+Set up automatic certificate renewal:
+
+```bash
+# Test renewal
+sudo certbot renew --dry-run
+
+# Add to crontab
+sudo crontab -e
+
+# Add this line to renew daily at 2am
+0 2 * * * certbot renew --quiet --post-hook "cd /home/ec2-user/langshazam/backend/deployment/ec2 && docker-compose restart nginx"
+```
+
+## Management
+
+### View Logs
+
+```bash
+cd ~/langshazam/backend/deployment/ec2
+
+# All containers
+docker-compose logs
+
+# Specific service
+docker-compose logs language-detector
+docker-compose logs nginx
+
+# Follow logs
+docker-compose logs -f
+```
+
+### Restart Services
+
+```bash
+# Restart all
+docker-compose restart
+
+# Restart specific service
+docker-compose restart language-detector
+docker-compose restart nginx
+```
+
+### Update Application
+
+```bash
+cd ~/langshazam
+
+# Pull latest code
+git pull
+
+# Rebuild and restart
+cd backend/deployment/ec2
+docker-compose down
+docker-compose build
+docker-compose up -d
+```
+
+### Monitor Resources
+
+```bash
+# Container stats
+docker stats
+
+# System resources
+top
+htop  # If installed
+
+# Disk usage
+df -h
+du -sh ~/langshazam
+```
+
+## Backup and Restore
+
+### Backup
+
+```bash
+# Create backup directory
+mkdir -p ~/backups
+
+# Backup logs
+docker run --rm \
+  -v language-detector_app_logs:/data \
+  -v ~/backups:/backup \
+  alpine tar -czvf /backup/app_logs_$(date +%Y%m%d).tar.gz /data
+
+# Backup Nginx configuration
+cp -r ~/langshazam/backend/deployment/ec2/nginx ~/backups/nginx_$(date +%Y%m%d)
+
+# Backup to S3 (optional)
+aws s3 cp ~/backups s3://your-backup-bucket/langshazam/ --recursive
+```
+
+### Restore
+
+```bash
+# Restore logs
+docker run --rm \
+  -v language-detector_app_logs:/data \
+  -v ~/backups:/backup \
+  alpine sh -c "rm -rf /data/* && tar -xzvf /backup/app_logs_20260308.tar.gz -C /"
+
+# Restore Nginx config
+cp -r ~/backups/nginx_20260308/* ~/langshazam/backend/deployment/ec2/nginx/
+
+# Restart services
+docker-compose restart
+```
+
+## CloudFormation Outputs
+
+After stack creation, retrieve outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name language-detector \
+  --query 'Stacks[0].Outputs'
+```
+
+**Available outputs:**
+- **VPC**: VPC ID
+- **PublicSubnet**: Subnet ID
+- **SecurityGroup**: Security Group ID
+- **PublicIP**: EC2 instance public IP
+- **PublicDNS**: EC2 instance public DNS
+
+## Troubleshooting
+
+### Cannot SSH into Instance
+
+```bash
+# Check security group allows your IP
+aws ec2 describe-security-groups \
+  --group-ids sg-xxxxx \
+  --query 'SecurityGroups[0].IpPermissions'
+
+# Verify key permissions
+chmod 400 YOUR_KEY_NAME.pem
+```
+
+### Containers Not Starting
+
+```bash
+# Check Docker daemon
+sudo systemctl status docker
+
+# Check logs
+docker-compose logs
+
+# Rebuild
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+### Application Not Accessible
+
+```bash
+# Check containers are running
+docker-compose ps
+
+# Check if ports are listening
+sudo netstat -tulpn | grep -E '(80|443|10000)'
+
+# Test locally
+curl http://localhost/
+
+# Check security group allows traffic
+aws ec2 describe-security-groups --group-ids sg-xxxxx
+```
+
+### High Costs
+
+<Note>
+**Cost optimization tips:**
+- Use t3.micro instead of t2.micro (better performance, similar cost)
+- Stop instance when not in use (dev/staging only)
+- Use AWS Free Tier eligible t2.micro for first year
+- Monitor with AWS Cost Explorer
+</Note>
+
+## Cleanup
+
+### Delete Stack
+
+```bash
+# Delete CloudFormation stack (removes all resources)
+aws cloudformation delete-stack --stack-name language-detector
+
+# Wait for deletion
+aws cloudformation wait stack-delete-complete --stack-name language-detector
+```
+
+<Warning>
+This permanently deletes the EC2 instance, VPC, security groups, and all data.
+</Warning>
+
+### Partial Cleanup
+
+```bash
+# SSH into instance and stop containers
+ssh -i YOUR_KEY_NAME.pem ec2-user@$EC2_IP
+cd ~/langshazam/backend/deployment/ec2
+docker-compose down -v  # -v removes volumes
+
+# Then delete stack as above
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Configure application settings
+  </Card>
+  <Card title="CORS Setup" icon="shield" href="/deployment/cors-setup">
+    Allow your frontend domain
+  </Card>
+</CardGroup>

@@ -1,0 +1,220 @@
+---
+title: 'WebSocket Endpoint'
+description: 'Real-time language detection via WebSocket connection'
+---
+
+## Endpoint
+
+```
+GET /ws
+```
+
+Establishes a WebSocket connection for real-time audio streaming and language detection.
+
+## Connection Flow
+
+1. Client initiates WebSocket connection to `/ws`
+2. Server accepts connection and assigns a unique `connection_id`
+3. Client sends audio data as binary chunks
+4. Server buffers audio until minimum size is reached (20,000 bytes)
+5. Server processes audio and returns language detection result
+6. Connection closes after sending response
+
+## Message Protocol
+
+### Client to Server
+
+Send raw audio data as binary WebSocket frames:
+
+<ParamField body="audio_data" type="bytes" required>
+  Audio data in MP4 format. The server buffers chunks until at least 20,000 bytes are received (approximately 1 second of audio).
+</ParamField>
+
+#### Audio Requirements
+
+- **Format**: MP4 container with audio codec
+- **Minimum size**: 20,000 bytes
+- **Recommended length**: 4-15 seconds
+- **Bits per second**: 16,000
+
+### Server to Client
+
+The server sends JSON responses in two scenarios:
+
+#### Success Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "language": "en",
+    "confidence": 0.9,
+    "processing_time": 2.34,
+    "connection_id": "a1b2c3d4"
+  },
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "a1b2c3d4"
+}
+```
+
+<ResponseField name="status" type="string" required>
+  Always `"success"` for successful detection
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Language detection results
+  
+  <Expandable title="data properties">
+    <ResponseField name="language" type="string" required>
+      ISO 639-1 language code (e.g., `"en"`, `"es"`, `"fr"`)
+    </ResponseField>
+    
+    <ResponseField name="confidence" type="number" required>
+      Confidence score (currently fixed at 0.9)
+    </ResponseField>
+    
+    <ResponseField name="processing_time" type="number" required>
+      Time taken to process the audio in seconds
+    </ResponseField>
+    
+    <ResponseField name="connection_id" type="string" required>
+      8-character unique identifier for this connection
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp when the response was generated
+</ResponseField>
+
+<ResponseField name="connection_id" type="string" required>
+  8-character unique identifier for this connection
+</ResponseField>
+
+#### Error Response
+
+```json
+{
+  "status": "error",
+  "message": "Error description",
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "a1b2c3d4"
+}
+```
+
+<ResponseField name="status" type="string" required>
+  Always `"error"` for failed detection
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Human-readable error description
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp when the error occurred
+</ResponseField>
+
+<ResponseField name="connection_id" type="string" required>
+  8-character unique identifier for this connection
+</ResponseField>
+
+## Implementation Examples
+
+### JavaScript
+
+```javascript
+const ws = new WebSocket('wss://languagedetection-9l89.onrender.com/ws');
+
+ws.onopen = () => {
+  console.log('WebSocket connected');
+  
+  // Send audio buffer
+  fetch('audio.mp4')
+    .then(res => res.arrayBuffer())
+    .then(buffer => ws.send(buffer));
+};
+
+ws.onmessage = (event) => {
+  const response = JSON.parse(event.data);
+  
+  if (response.status === 'success') {
+    console.log('Language:', response.data.language);
+    console.log('Processing time:', response.data.processing_time, 's');
+  } else {
+    console.error('Error:', response.message);
+  }
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+
+ws.onclose = () => {
+  console.log('WebSocket disconnected');
+};
+```
+
+### Python
+
+```python
+import asyncio
+import websockets
+import json
+
+async def detect_language(audio_file_path):
+    uri = "wss://languagedetection-9l89.onrender.com/ws"
+    
+    async with websockets.connect(uri) as websocket:
+        # Read and send audio file
+        with open(audio_file_path, 'rb') as f:
+            audio_data = f.read()
+            await websocket.send(audio_data)
+        
+        # Receive response
+        response = await websocket.recv()
+        result = json.loads(response)
+        
+        if result['status'] == 'success':
+            print(f"Language: {result['data']['language']}")
+            print(f"Processing time: {result['data']['processing_time']}s")
+        else:
+            print(f"Error: {result['message']}")
+
+asyncio.run(detect_language('audio.mp4'))
+```
+
+## Connection Tracking
+
+Each WebSocket connection receives a unique 8-character `connection_id` (shortened UUID) used for:
+- Request tracing in server logs
+- Correlating responses with requests
+- Debugging and monitoring
+
+## Metrics Impact
+
+Each connection affects the following server metrics:
+- `active_connections`: Incremented on connection, decremented on close
+- `total_requests`: Incremented when connection is established
+- `errors`: Incremented if processing fails
+- `processing_times`: Audio processing duration added to rolling buffer
+
+See [metrics endpoint](/api/metrics) for details.
+
+## Connection Lifecycle
+
+From `websocket_manager.py:18-92`:
+
+1. **Accept**: Connection accepted, `connection_id` assigned
+2. **Increment**: `active_connections` and `total_requests` counters updated
+3. **Buffer**: Audio chunks buffered until minimum size reached
+4. **Process**: Audio sent to OpenAI API for transcription
+5. **Respond**: Language detection result sent as JSON
+6. **Close**: WebSocket closed, `active_connections` decremented
+
+## Error Handling
+
+The endpoint handles these error scenarios:
+- Empty data chunks (ignored)
+- OpenAI API errors (returned as error response)
+- WebSocket disconnection (logged, metrics updated)
+- General exceptions (logged, error response sent, connection closed)

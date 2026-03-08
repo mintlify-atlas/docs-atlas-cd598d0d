@@ -1,0 +1,494 @@
+---
+title: Render Deployment
+description: Deploy LangShazam to Render with one-click deployment
+---
+
+Deploy LangShazam to Render for the fastest and easiest deployment experience with managed infrastructure and automatic scaling.
+
+## Overview
+
+Render provides:
+- One-click deployment from GitHub
+- Automatic HTTPS/SSL certificates
+- Zero-downtime deployments
+- Automatic health checks
+- Managed infrastructure
+- Built-in monitoring
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Render Account" icon="cloud">
+    Sign up at [render.com](https://render.com)
+  </Card>
+  <Card title="GitHub Repository" icon="github">
+    Code hosted on GitHub (or GitLab)
+  </Card>
+  <Card title="OpenAI API Key" icon="key">
+    Valid API key with Whisper access
+  </Card>
+</CardGroup>
+
+## Render Configuration
+
+The deployment is configured in `render.yaml` at the project root:
+
+```yaml
+services:
+  - type: web
+    name: language-detector-backend
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PORT
+        value: 10000
+```
+
+## Deployment Methods
+
+### Method 1: Render Dashboard (Recommended)
+
+<Steps>
+  <Step title="Connect GitHub">
+    1. Go to [dashboard.render.com](https://dashboard.render.com)
+    2. Click "New +" → "Web Service"
+    3. Connect your GitHub account if not already connected
+    4. Select your LangShazam repository
+  </Step>
+  
+  <Step title="Configure Service">
+    **Basic Settings:**
+    - **Name**: `langshazam-backend`
+    - **Region**: Choose closest to your users
+    - **Branch**: `main` (or your default branch)
+    - **Root Directory**: `backend`
+    
+    **Build Settings:**
+    - **Runtime**: Python 3
+    - **Build Command**: `pip install -r requirements.txt`
+    - **Start Command**: `uvicorn src.main:app --host 0.0.0.0 --port 10000`
+  </Step>
+  
+  <Step title="Set Environment Variables">
+    Add these environment variables:
+    
+    | Key | Value |
+    |-----|-------|
+    | `OPENAI_API_KEY` | Your OpenAI API key |
+    | `PORT` | `10000` |
+    | `PYTHON_VERSION` | `3.9.0` |
+    
+    <Warning>
+    Keep your OpenAI API key secret. Never commit it to your repository.
+    </Warning>
+  </Step>
+  
+  <Step title="Choose Plan">
+    **Free Tier:**
+    - 512 MB RAM
+    - Shared CPU
+    - Sleeps after 15 min inactivity
+    - Great for testing
+    
+    **Starter ($7/month):**
+    - 512 MB RAM
+    - Dedicated resources
+    - No sleep
+    - 24/7 availability
+    
+    **Standard ($25/month):**
+    - 2 GB RAM
+    - Better performance
+    - Production-ready
+  </Step>
+  
+  <Step title="Deploy">
+    Click "Create Web Service"
+    
+    Render will:
+    1. Clone your repository
+    2. Install dependencies
+    3. Start the application
+    4. Provision SSL certificate
+    5. Generate a URL: `https://langshazam-backend.onrender.com`
+    
+    Deployment takes 3-5 minutes.
+  </Step>
+</Steps>
+
+### Method 2: Render Blueprint (render.yaml)
+
+<Note>
+This method requires a properly configured `render.yaml` file in your repository root.
+</Note>
+
+<Steps>
+  <Step title="Update render.yaml">
+    Ensure `render.yaml` is at your project root with correct paths:
+    
+    ```yaml
+    services:
+      - type: web
+        name: langshazam-backend
+        env: python
+        rootDir: backend
+        buildCommand: pip install -r requirements.txt
+        startCommand: uvicorn src.main:app --host 0.0.0.0 --port 10000
+        envVars:
+          - key: PORT
+            value: 10000
+          - key: PYTHON_VERSION
+            value: 3.9.0
+          - key: OPENAI_API_KEY
+            sync: false  # Will prompt for value
+    ```
+  </Step>
+  
+  <Step title="Deploy from Dashboard">
+    1. Go to [dashboard.render.com](https://dashboard.render.com)
+    2. Click "New +" → "Blueprint"
+    3. Connect your repository
+    4. Render will detect `render.yaml` automatically
+    5. Enter `OPENAI_API_KEY` when prompted
+    6. Click "Apply"
+  </Step>
+</Steps>
+
+### Method 3: Render CLI
+
+```bash
+# Install Render CLI
+npm install -g render-cli
+
+# Login
+render login
+
+# Deploy from render.yaml
+render blueprint launch
+```
+
+## Configuration
+
+### Environment Variables
+
+Add or update environment variables in the Render dashboard:
+
+1. Go to your service dashboard
+2. Click "Environment" tab
+3. Add/edit variables:
+
+```
+OPENAI_API_KEY=sk-...
+PORT=10000
+PYTHON_VERSION=3.9.0
+DEBUG=false
+LOGGING_LEVEL=INFO
+```
+
+4. Click "Save Changes"
+5. Service will automatically redeploy
+
+### Custom Domain
+
+<Steps>
+  <Step title="Add Custom Domain">
+    1. In service dashboard, go to "Settings" tab
+    2. Scroll to "Custom Domains"
+    3. Click "Add Custom Domain"
+    4. Enter your domain (e.g., `api.langshazam.com`)
+  </Step>
+  
+  <Step title="Configure DNS">
+    Add a CNAME record in your DNS provider:
+    
+    ```
+    Type: CNAME
+    Name: api
+    Value: langshazam-backend.onrender.com
+    TTL: 3600
+    ```
+  </Step>
+  
+  <Step title="Wait for SSL">
+    Render automatically provisions SSL certificates with Let's Encrypt.
+    
+    This takes 5-15 minutes after DNS propagates.
+  </Step>
+</Steps>
+
+### Health Checks
+
+Render automatically monitors your service health.
+
+**Default health check:**
+- **Endpoint**: `/` (root endpoint)
+- **Expected**: HTTP 200 response
+- **Interval**: 30 seconds
+
+Customize in service settings:
+1. Go to "Settings" tab
+2. Scroll to "Health Check Path"
+3. Change if needed (default `/` works for LangShazam)
+
+## Auto-Deploy
+
+Render automatically deploys when you push to GitHub.
+
+### Enable/Disable Auto-Deploy
+
+1. Go to service dashboard
+2. Click "Settings" tab
+3. Find "Auto-Deploy"
+4. Toggle on/off
+
+### Manual Deploy
+
+Trigger manual deployment:
+
+1. Go to service dashboard
+2. Click "Manual Deploy" button
+3. Select branch to deploy
+4. Click "Deploy"
+
+## Monitoring
+
+### View Logs
+
+<Tabs>
+  <Tab title="Dashboard">
+    1. Go to service dashboard
+    2. Click "Logs" tab
+    3. View real-time logs
+    4. Filter by severity (Info, Warning, Error)
+  </Tab>
+  
+  <Tab title="CLI">
+    ```bash
+    render logs
+    
+    # Follow logs
+    render logs --tail
+    ```
+  </Tab>
+</Tabs>
+
+### Metrics
+
+View service metrics in the "Metrics" tab:
+- **CPU usage**
+- **Memory usage**
+- **Request rate**
+- **Response time**
+- **Error rate**
+
+### Alerts
+
+Set up alerts in service settings:
+1. Go to "Settings" tab
+2. Scroll to "Notifications"
+3. Add email or Slack webhook
+4. Configure alert conditions
+
+## Scaling
+
+### Vertical Scaling (Upgrade Plan)
+
+1. Go to service dashboard
+2. Click "Settings" tab
+3. Scroll to "Instance Type"
+4. Select a larger plan
+5. Click "Save Changes"
+
+**Available plans:**
+
+| Plan | RAM | CPU | Price/Month |
+|------|-----|-----|-------------|
+| Free | 512 MB | Shared | $0 |
+| Starter | 512 MB | 0.5 CPU | $7 |
+| Standard | 2 GB | 1 CPU | $25 |
+| Pro | 4 GB | 2 CPU | $85 |
+| Pro Plus | 8 GB | 4 CPU | $185 |
+
+### Horizontal Scaling (Multiple Instances)
+
+<Note>
+Horizontal scaling is available on Pro plans and above.
+</Note>
+
+1. Go to "Settings" tab
+2. Scroll to "Scaling"
+3. Increase "Instance Count"
+4. Render automatically load balances
+
+## Connecting Frontend
+
+Update your frontend CORS configuration to include your Render URL.
+
+**In `backend/src/config/settings.py`:**
+
+```python
+CORS_ORIGINS = [
+    "https://www.langshazam.com",
+    "https://langshazam.com",
+    "http://localhost:3000",
+    "https://langshazam-backend.onrender.com",  # Add this
+    # Or your custom domain:
+    "https://api.langshazam.com",
+]
+```
+
+Commit and push - Render will auto-deploy.
+
+## Troubleshooting
+
+### Build Failed
+
+**Check logs for errors:**
+1. Go to "Events" tab
+2. Find the failed deployment
+3. Click "View Logs"
+
+**Common issues:**
+- Missing `requirements.txt`
+- Wrong Python version
+- Incorrect start command
+- Missing dependencies
+
+**Fix:**
+```yaml
+# Update render.yaml
+buildCommand: pip install -r backend/requirements.txt
+startCommand: cd backend && uvicorn src.main:app --host 0.0.0.0 --port 10000
+```
+
+### Service Unavailable
+
+**Free tier sleeping:**
+Free services sleep after 15 minutes of inactivity.
+- First request takes 30-60 seconds (cold start)
+- Upgrade to Starter plan ($7/month) for 24/7 availability
+
+**Service crashed:**
+1. Check logs for errors
+2. Verify `OPENAI_API_KEY` is set
+3. Check health check is passing
+4. Restart service manually
+
+### Slow Performance
+
+**Free tier limitations:**
+- Shared CPU
+- 512 MB RAM
+- Slower cold starts
+
+**Solutions:**
+1. Upgrade to Starter or Standard plan
+2. Optimize application code
+3. Use connection pooling
+4. Implement caching
+
+### Environment Variable Not Working
+
+1. Verify variable is set in dashboard
+2. Check spelling and capitalization
+3. Restart service after changes
+4. Check logs for "KeyError" or "None"
+
+```bash
+# In logs, you should see:
+INFO:     Uvicorn running on http://0.0.0.0:10000
+
+# Not:
+KeyError: 'OPENAI_API_KEY'
+```
+
+## Cost Optimization
+
+### Free Tier
+
+<Note>
+**Free tier includes:**
+- 750 hours/month (enough for 1 service running 24/7)
+- 100 GB bandwidth/month
+- Automatic SSL
+- Sleep after 15 min inactivity
+</Note>
+
+**Best for:**
+- Personal projects
+- Testing and development
+- Low-traffic applications
+- Demos and prototypes
+
+### Paid Plans
+
+**When to upgrade:**
+- You need 24/7 availability
+- Traffic exceeds free tier limits
+- You need better performance
+- You require custom domains
+
+**Cost estimates:**
+- **Starter ($7/month)**: 1 service, 24/7, 512 MB RAM
+- **Standard ($25/month)**: 1 service, 24/7, 2 GB RAM
+- **2x Standard ($50/month)**: 2 instances, load balanced
+
+## Security
+
+### Environment Variables
+
+<Warning>
+**Never commit secrets to Git:**
+- Use Render environment variables
+- Add `.env` to `.gitignore`
+- Rotate keys if exposed
+</Warning>
+
+### HTTPS
+
+Render automatically provides:
+- Free SSL certificates
+- Automatic renewal
+- HTTPS redirects
+- TLS 1.2+
+
+### DDoS Protection
+
+Render includes:
+- Built-in DDoS mitigation
+- Rate limiting
+- Traffic filtering
+
+## Backup and Rollback
+
+### Rollback to Previous Deploy
+
+1. Go to "Events" tab
+2. Find the previous successful deployment
+3. Click "Rollback to this version"
+4. Confirm
+
+### Database Backups
+
+<Note>
+LangShazam is stateless and doesn't require database backups. If you add a database later, Render provides automatic daily backups.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Configure all environment variables
+  </Card>
+  <Card title="CORS Setup" icon="shield" href="/deployment/cors-setup">
+    Allow your frontend domain
+  </Card>
+  <Card title="Custom Domain" icon="globe" href="/deployment/render#custom-domain">
+    Set up your own domain
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/deployment/render#monitoring">
+    Monitor your service
+  </Card>
+</CardGroup>

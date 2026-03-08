@@ -1,0 +1,546 @@
+---
+title: CORS Configuration
+description: Configure Cross-Origin Resource Sharing for LangShazam
+---
+
+Configure CORS (Cross-Origin Resource Sharing) to allow your frontend application to communicate with the LangShazam backend.
+
+## What is CORS?
+
+CORS is a security feature that restricts web pages from making requests to a different domain than the one serving the page.
+
+**Example:**
+- Frontend: `https://www.langshazam.com`
+- Backend: `https://api.langshazam.com`
+- Without CORS: ❌ Browser blocks requests
+- With CORS: ✅ Requests allowed
+
+## Default Configuration
+
+From `backend/src/config/settings.py:14-23`:
+
+```python
+CORS_ORIGINS = [
+    "https://www.langshazam.com",
+    "https://langshazam.com",
+    "http://www.langshazam.com",
+    "http://langshazam.com",
+    "http://localhost:3000",  # For local development
+    "http://localhost:5173",  # For Vite development server
+    "http://127.0.0.1:3000",  # Alternative local development
+    "http://127.0.0.1:5173"   # Alternative Vite development server
+]
+```
+
+## How CORS is Applied
+
+From `backend/src/main.py:28-34`:
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+from .config.settings import CORS_ORIGINS
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Configuration breakdown:**
+- `allow_origins`: List of allowed domains
+- `allow_credentials`: Allow cookies and authorization headers
+- `allow_methods`: Allow all HTTP methods (GET, POST, OPTIONS, etc.)
+- `allow_headers`: Allow all headers
+
+## Adding Your Domain
+
+<Steps>
+  <Step title="Edit settings.py">
+    Open `backend/src/config/settings.py` and add your domain to the `CORS_ORIGINS` list:
+    
+    ```python
+    CORS_ORIGINS = [
+        "https://www.langshazam.com",
+        "https://langshazam.com",
+        "http://www.langshazam.com",
+        "http://langshazam.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        # Add your domains below
+        "https://yourdomain.com",           # Your production domain
+        "https://www.yourdomain.com",       # With www
+        "https://staging.yourdomain.com",   # Staging environment
+    ]
+    ```
+  </Step>
+  
+  <Step title="Commit and Deploy">
+    ```bash
+    git add backend/src/config/settings.py
+    git commit -m "Add CORS origin for yourdomain.com"
+    git push
+    ```
+  </Step>
+  
+  <Step title="Redeploy Backend">
+    Redeploy your backend service:
+    
+    <Tabs>
+      <Tab title="Docker">
+        ```bash
+        docker-compose down
+        docker-compose build
+        docker-compose up -d
+        ```
+      </Tab>
+      
+      <Tab title="Kubernetes">
+        ```bash
+        kubectl rollout restart deployment/language-detector -n language-detector
+        ```
+      </Tab>
+      
+      <Tab title="Render">
+        Auto-deploys on git push, or trigger manual deploy in dashboard
+      </Tab>
+      
+      <Tab title="EC2">
+        ```bash
+        ssh -i key.pem ec2-user@<ip>
+        cd langshazam
+        git pull
+        cd backend/deployment/ec2
+        docker-compose down
+        docker-compose build
+        docker-compose up -d
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Test CORS">
+    Open your browser console on your frontend domain and test:
+    
+    ```javascript
+    fetch('https://your-backend.com/')
+      .then(r => r.json())
+      .then(console.log)
+      .catch(console.error)
+    ```
+    
+    Should return: `{"message": "Server is running!"}`
+  </Step>
+</Steps>
+
+## Common Scenarios
+
+### Local Development
+
+**Frontend on localhost:3000, backend on localhost:10000:**
+
+```python
+CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+```
+
+**Vite dev server (port 5173):**
+
+```python
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+```
+
+### Production with Custom Domain
+
+**Frontend: yourdomain.com, Backend: api.yourdomain.com**
+
+```python
+CORS_ORIGINS = [
+    "https://yourdomain.com",
+    "https://www.yourdomain.com",
+    "http://localhost:3000",  # Keep for local dev
+]
+```
+
+### Multiple Environments
+
+**Dev, Staging, Production:**
+
+```python
+CORS_ORIGINS = [
+    # Production
+    "https://langshazam.com",
+    "https://www.langshazam.com",
+    
+    # Staging
+    "https://staging.langshazam.com",
+    "https://dev.langshazam.com",
+    
+    # Local development
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+```
+
+### Frontend on Vercel/Netlify
+
+**Vercel preview deployments:**
+
+```python
+CORS_ORIGINS = [
+    "https://langshazam.vercel.app",
+    "https://langshazam-*.vercel.app",  # Doesn't work - need exact URLs
+    "https://langshazam-git-main-youruser.vercel.app",
+]
+```
+
+<Warning>
+Wildcard subdomains are not supported. Each preview URL must be added individually, or use `allow_origins=["*"]` for development only.
+</Warning>
+
+## Dynamic CORS (Environment Variable)
+
+For more flexibility, load origins from environment variables:
+
+### Update settings.py
+
+```python
+import os
+
+# Base origins
+BASE_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+
+# Additional origins from environment
+ADDITIONAL_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
+ADDITIONAL_ORIGINS = [origin.strip() for origin in ADDITIONAL_ORIGINS if origin.strip()]
+
+CORS_ORIGINS = BASE_ORIGINS + ADDITIONAL_ORIGINS
+```
+
+### Set Environment Variable
+
+<Tabs>
+  <Tab title="Docker">
+    ```bash
+    docker run -e CORS_ORIGINS="https://yourdomain.com,https://www.yourdomain.com" langshazam
+    ```
+  </Tab>
+  
+  <Tab title="Docker Compose">
+    ```yaml
+    environment:
+      - CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+    ```
+  </Tab>
+  
+  <Tab title="Kubernetes">
+    ```yaml
+    env:
+    - name: CORS_ORIGINS
+      value: "https://yourdomain.com,https://www.yourdomain.com"
+    ```
+  </Tab>
+  
+  <Tab title="Render">
+    Add environment variable in dashboard:
+    ```
+    CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+    ```
+  </Tab>
+</Tabs>
+
+## Allow All Origins (Development Only)
+
+<Warning>
+**Never use in production** - allows any website to access your API.
+</Warning>
+
+```python
+# For development/testing ONLY
+CORS_ORIGINS = ["*"]
+```
+
+Or in middleware:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # WARNING: Insecure
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## WebSocket CORS
+
+WebSocket connections also respect CORS settings. The same `CORS_ORIGINS` list applies to:
+- HTTP requests (`GET /`, `GET /metrics`)
+- WebSocket connections (`ws://` or `wss://`)
+
+**Example WebSocket connection:**
+
+```javascript
+// Frontend running on https://langshazam.com
+const ws = new WebSocket('wss://api.langshazam.com/ws');
+
+ws.onopen = () => {
+  console.log('Connected');
+  // Send audio data
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Language detected:', data.language);
+};
+```
+
+CORS is checked during the WebSocket handshake (HTTP upgrade request).
+
+## Nginx CORS Headers (Alternative)
+
+If using Nginx as a reverse proxy, you can also add CORS headers there:
+
+### EC2 Nginx Configuration
+
+Edit `backend/deployment/ec2/nginx/conf/language-detector.conf`:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        # Proxy to backend
+        proxy_pass http://language-detector:10000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # CORS headers (optional - backend already handles)
+        add_header 'Access-Control-Allow-Origin' '$http_origin' always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' '*' always;
+        
+        # Handle preflight
+        if ($request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+}
+```
+
+<Note>
+Since the backend already handles CORS, adding it in Nginx is redundant but can provide an additional layer of control.
+</Note>
+
+## Troubleshooting
+
+### "CORS policy: No 'Access-Control-Allow-Origin' header"
+
+**Cause**: Frontend domain not in `CORS_ORIGINS` list
+
+**Fix:**
+1. Check browser console for the origin being used
+2. Add exact origin to `CORS_ORIGINS`
+3. Include protocol (`http://` or `https://`)
+4. Check for trailing slash (should not have one)
+5. Redeploy backend
+
+**Example error:**
+```
+Access to fetch at 'https://api.langshazam.com/' from origin 'https://yourdomain.com' 
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present.
+```
+
+**Solution:**
+```python
+CORS_ORIGINS = [
+    "https://yourdomain.com",  # Add this exact origin
+    # ... other origins
+]
+```
+
+### "CORS policy: The value of the 'Access-Control-Allow-Credentials' header"
+
+**Cause**: Using wildcards with credentials
+
+**Fix**: Cannot use `allow_origins=["*"]` with `allow_credentials=True`
+
+Either:
+1. Specify exact origins (recommended)
+2. Or set `allow_credentials=False`
+
+### "Preflight request doesn't pass"
+
+**Cause**: OPTIONS request not handled
+
+**Check**: FastAPI's CORS middleware should handle OPTIONS automatically
+
+**Verify:**
+```bash
+curl -X OPTIONS https://your-backend.com/ \
+  -H "Origin: https://your-frontend.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -v
+```
+
+Should return `200 OK` with CORS headers.
+
+### "WebSocket connection failed"
+
+**Cause**: CORS also applies to WebSocket handshake
+
+**Fix**: Same as HTTP - add origin to `CORS_ORIGINS`
+
+**Test:**
+```javascript
+const ws = new WebSocket('wss://your-backend.com/ws');
+ws.onerror = (error) => console.error('WebSocket error:', error);
+```
+
+Check browser console for CORS error.
+
+### "localhost works but production doesn't"
+
+**Cause**: Different origins for local vs production
+
+**Check:**
+- Local: `http://localhost:3000`
+- Production: `https://yourdomain.com`
+
+Both must be in `CORS_ORIGINS`.
+
+### "www subdomain not working"
+
+**Cause**: `www.yourdomain.com` and `yourdomain.com` are different origins
+
+**Fix**: Add both:
+```python
+CORS_ORIGINS = [
+    "https://yourdomain.com",
+    "https://www.yourdomain.com",
+]
+```
+
+## Testing CORS
+
+### Browser Console
+
+```javascript
+// From your frontend domain
+fetch('https://your-backend.com/', {
+  method: 'GET',
+  credentials: 'include',
+})
+  .then(r => r.json())
+  .then(data => console.log('Success:', data))
+  .catch(err => console.error('CORS error:', err));
+```
+
+### curl
+
+```bash
+# Test CORS headers
+curl -H "Origin: https://your-frontend.com" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: Content-Type" \
+  -X OPTIONS \
+  https://your-backend.com/ \
+  -v
+
+# Should see:
+# < Access-Control-Allow-Origin: https://your-frontend.com
+# < Access-Control-Allow-Credentials: true
+```
+
+### Browser DevTools
+
+1. Open DevTools (F12)
+2. Go to Network tab
+3. Make a request to backend
+4. Click on the request
+5. Check "Response Headers" for:
+   - `Access-Control-Allow-Origin`
+   - `Access-Control-Allow-Credentials`
+   - `Access-Control-Allow-Methods`
+
+## Security Best Practices
+
+<Warning>
+**CORS is not a security feature** - it only controls browser access. Backend API keys and authentication are still required.
+</Warning>
+
+### Do:
+- ✅ Use exact origins (no wildcards in production)
+- ✅ Use HTTPS in production
+- ✅ Include both `www` and non-`www` if needed
+- ✅ Test CORS before deploying
+- ✅ Use environment variables for dynamic origins
+- ✅ Keep local development origins for testing
+
+### Don't:
+- ❌ Use `allow_origins=["*"]` in production
+- ❌ Allow untrusted domains
+- ❌ Mix HTTP and HTTPS in production
+- ❌ Forget to redeploy after changes
+- ❌ Rely on CORS alone for security
+
+## Production Checklist
+
+<Steps>
+  <Step title="Verify Origins">
+    - [ ] Production domain added
+    - [ ] WWW variant added (if applicable)
+    - [ ] Staging domain added
+    - [ ] Local development origins present
+    - [ ] No wildcards (`*`)
+  </Step>
+  
+  <Step title="Test Access">
+    - [ ] Frontend can connect to backend
+    - [ ] WebSocket connections work
+    - [ ] No CORS errors in console
+    - [ ] Credentials work (if using)
+  </Step>
+  
+  <Step title="Security Review">
+    - [ ] HTTPS enforced in production
+    - [ ] No unnecessary origins allowed
+    - [ ] API keys secured
+    - [ ] Rate limiting configured
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Configure other environment settings
+  </Card>
+  <Card title="Deployment Options" icon="rocket" href="/deployment/overview">
+    Choose your deployment platform
+  </Card>
+</CardGroup>

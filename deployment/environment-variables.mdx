@@ -1,0 +1,601 @@
+---
+title: Environment Variables
+description: Complete reference for all LangShazam environment variables
+---
+
+Configure LangShazam's behavior using environment variables. All variables are optional except `OPENAI_API_KEY`.
+
+## Required Variables
+
+### OPENAI_API_KEY
+
+<Warning>
+This variable is **required** for the application to function.
+</Warning>
+
+```bash
+OPENAI_API_KEY=sk-proj-...
+```
+
+**Description**: Your OpenAI API key with access to the Whisper API for language detection.
+
+**Where to get it:**
+1. Sign up at [platform.openai.com](https://platform.openai.com)
+2. Go to API keys section
+3. Create a new secret key
+4. Ensure billing is enabled
+
+**Used in** `backend/src/main.py:38`:
+```python
+audio_processor = AudioProcessor(api_key=os.getenv("OPENAI_API_KEY"))
+```
+
+**Format**: String starting with `sk-`
+
+**Security**: Never commit to version control, use secrets management
+
+## Server Configuration
+
+### PORT
+
+```bash
+PORT=10000
+```
+
+**Description**: The port on which the server listens.
+
+**Default**: `10000`
+
+**Used in** `backend/src/config/settings.py:9`:
+```python
+SERVER_CONFIG = {
+    "host": "0.0.0.0",
+    "port": int(os.getenv("PORT", "10000")),
+    "debug": os.getenv("DEBUG", "false").lower() == "true"
+}
+```
+
+**Valid range**: 1024-65535
+
+**Common values:**
+- `10000` - Default
+- `8080` - Alternative HTTP port
+- `3000` - Node.js convention
+
+**Docker note**: When changing PORT, update Dockerfile EXPOSE directive and container port mappings.
+
+### DEBUG
+
+```bash
+DEBUG=false
+```
+
+**Description**: Enable debug mode for verbose logging and stack traces.
+
+**Default**: `false`
+
+**Valid values**: `true`, `false` (case-insensitive)
+
+**Used in** `backend/src/config/settings.py:10`:
+```python
+"debug": os.getenv("DEBUG", "false").lower() == "true"
+```
+
+**Effects when enabled:**
+- Detailed error messages
+- Full stack traces in responses
+- Reload on code changes (in development)
+
+<Warning>
+**Never enable DEBUG in production** - it exposes sensitive information and reduces performance.
+</Warning>
+
+## Logging Configuration
+
+### LOGGING_LEVEL
+
+```bash
+LOGGING_LEVEL=INFO
+```
+
+**Description**: Controls the verbosity of application logs.
+
+**Default**: `INFO`
+
+**Valid values**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+
+**Used in** `backend/src/config/settings.py:42` and `backend/src/main.py:18`:
+```python
+LOGGING_CONFIG = {
+    "level": "INFO",
+    "format": "%(asctime)s [%(levelname)s] %(message)s",
+    "datefmt": "%Y-%m-%d %H:%M:%S"
+}
+
+logging.basicConfig(
+    level=getattr(logging, LOGGING_CONFIG["level"]),
+    format=LOGGING_CONFIG["format"],
+    datefmt=LOGGING_CONFIG["datefmt"]
+)
+```
+
+**Log levels explained:**
+
+| Level | When to Use | Example Output |
+|-------|-------------|----------------|
+| `DEBUG` | Development, troubleshooting | All function calls, variables |
+| `INFO` | Production (default) | Connection events, requests |
+| `WARNING` | Production alerts | Deprecated features, config issues |
+| `ERROR` | Error tracking only | Failed API calls, exceptions |
+| `CRITICAL` | Fatal errors only | System crashes, data loss |
+
+**Recommendation:**
+- Development: `DEBUG`
+- Staging: `INFO`
+- Production: `INFO` or `WARNING`
+
+## Audio Processing Settings
+
+These settings are defined in `backend/src/config/settings.py:26-32` but currently **cannot be overridden** by environment variables:
+
+```python
+AUDIO_CONFIG = {
+    "min_audio_size": 20000,  # Minimum size in bytes
+    "chunk_size": 128 * 1024,  # 128KB chunks
+    "min_audio_length": 4000,  # 4 seconds minimum
+    "max_audio_length": 15000,  # 15 seconds maximum
+    "audio_bits_per_second": 16000
+}
+```
+
+<Note>
+To customize these values, modify `settings.py` directly. Future versions may support environment variable overrides.
+</Note>
+
+### Future: MAX_AUDIO_SIZE_MB
+
+```bash
+MAX_AUDIO_SIZE_MB=5
+```
+
+**Description**: Maximum audio file size in megabytes.
+
+**Default**: `5` MB
+
+**Note**: Currently defined in Docker Compose configs but not implemented in application code.
+
+**Found in:**
+- `ec2/docker-compose.yml:16`
+- `kubernetes/manifests/configmap.yaml:10`
+
+### Future: MAX_CONNECTIONS
+
+```bash
+MAX_CONNECTIONS=100
+```
+
+**Description**: Maximum concurrent WebSocket connections.
+
+**Default**: `100`
+
+**Note**: Currently defined in deployment configs but not enforced in application code.
+
+**Found in:**
+- `ec2/docker-compose.yml:15`
+- `kubernetes/manifests/configmap.yaml:9`
+
+## OpenAI Configuration
+
+Defined in `backend/src/config/settings.py:35-38` (not configurable via environment):
+
+```python
+OPENAI_CONFIG = {
+    "model": "whisper-1",
+    "max_concurrent_calls": 3
+}
+```
+
+**Future improvements**: These could be made configurable:
+
+```bash
+# Not yet supported
+OPENAI_MODEL=whisper-1
+OPENAI_MAX_CONCURRENT_CALLS=3
+```
+
+## Python Environment
+
+### PYTHONPATH
+
+```bash
+PYTHONPATH=/app
+```
+
+**Description**: Python module search path.
+
+**Default**: `/app` (in Docker)
+
+**Used in** `backend/deployment/docker/Dockerfile:13`:
+```dockerfile
+ENV PYTHONPATH=/app
+```
+
+**Purpose**: Allows importing modules with `from src.main import app` instead of relative imports.
+
+### PYTHON_VERSION
+
+```bash
+PYTHON_VERSION=3.9.0
+```
+
+**Description**: Specifies Python version for platform deployments (Render, Heroku).
+
+**Default**: `3.9` (Docker), platform-specific otherwise
+
+**Required for**: Render, Heroku, and other PaaS platforms
+
+**Not used**: Docker deployments (version specified in Dockerfile)
+
+## Deployment-Specific Variables
+
+### Docker Compose
+
+From `ec2/docker-compose.yml:12-16`:
+
+```yaml
+environment:
+  - OPENAI_API_KEY=${OPENAI_API_KEY}
+  - LOGGING_LEVEL=INFO
+  - MAX_CONNECTIONS=100
+  - MAX_AUDIO_SIZE_MB=5
+```
+
+**Set before running:**
+```bash
+export OPENAI_API_KEY=sk-...
+docker-compose up -d
+```
+
+### Kubernetes
+
+**Secrets** (`kubernetes/manifests/secrets.yaml`):
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: language-detector-secrets
+type: Opaque
+data:
+  openai-api-key: <base64-encoded-key>
+```
+
+**ConfigMap** (`kubernetes/manifests/configmap.yaml`):
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: language-detector-config
+data:
+  LOGGING_LEVEL: "INFO"
+  MAX_CONNECTIONS: "100"
+  MAX_AUDIO_SIZE_MB: "5"
+```
+
+**Set secrets:**
+```bash
+echo -n "sk-your-key" | base64
+# Add output to secrets.yaml
+kubectl apply -f secrets.yaml
+```
+
+### Render
+
+Set in Render dashboard or `render.yaml`:
+
+```yaml
+envVars:
+  - key: PORT
+    value: 10000
+  - key: PYTHON_VERSION
+    value: 3.9.0
+  - key: OPENAI_API_KEY
+    sync: false  # Prompt for value
+  - key: LOGGING_LEVEL
+    value: INFO
+```
+
+## Setting Environment Variables
+
+### Local Development
+
+**Option 1: Export in shell**
+```bash
+export OPENAI_API_KEY=sk-...
+export DEBUG=true
+export LOGGING_LEVEL=DEBUG
+python -m uvicorn src.main:app --reload
+```
+
+**Option 2: .env file** (requires python-dotenv)
+```bash
+# Create .env file
+cat > .env << EOF
+OPENAI_API_KEY=sk-...
+DEBUG=true
+LOGGING_LEVEL=DEBUG
+EOF
+
+# Add to .gitignore
+echo ".env" >> .gitignore
+```
+
+**Option 3: IDE configuration**
+- VS Code: `.vscode/settings.json`
+- PyCharm: Run configurations
+- IntelliJ: Environment variables field
+
+### Docker
+
+**Option 1: Command line**
+```bash
+docker run -e OPENAI_API_KEY=sk-... -e DEBUG=false langshazam
+```
+
+**Option 2: .env file**
+```bash
+docker run --env-file .env langshazam
+```
+
+**Option 3: Docker Compose**
+```yaml
+services:
+  langshazam:
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEBUG=false
+    # Or:
+    env_file:
+      - .env
+```
+
+### Kubernetes
+
+**From Secret:**
+```yaml
+env:
+- name: OPENAI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: language-detector-secrets
+      key: openai-api-key
+```
+
+**From ConfigMap:**
+```yaml
+env:
+- name: LOGGING_LEVEL
+  valueFrom:
+    configMapKeyRef:
+      name: language-detector-config
+      key: LOGGING_LEVEL
+```
+
+**Direct value:**
+```yaml
+env:
+- name: DEBUG
+  value: "false"
+```
+
+### AWS EC2
+
+**SSH into instance:**
+```bash
+ssh -i key.pem ec2-user@<instance-ip>
+export OPENAI_API_KEY=sk-...
+cd langshazam/backend/deployment/ec2
+docker-compose up -d
+```
+
+**Persistent (add to .bashrc):**
+```bash
+echo 'export OPENAI_API_KEY=sk-...' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Render
+
+**Dashboard:**
+1. Go to service settings
+2. Environment tab
+3. Add variable
+4. Save changes (auto-redeploy)
+
+**CLI:**
+```bash
+render env set OPENAI_API_KEY=sk-...
+```
+
+## Security Best Practices
+
+<Warning>
+**Never commit secrets to version control**
+</Warning>
+
+### Do:
+- ✅ Use environment variables for all secrets
+- ✅ Add `.env` to `.gitignore`
+- ✅ Use secrets managers (AWS Secrets Manager, HashiCorp Vault)
+- ✅ Rotate keys regularly
+- ✅ Use different keys for dev/staging/prod
+- ✅ Encrypt secrets at rest
+- ✅ Limit access with IAM policies
+
+### Don't:
+- ❌ Commit `.env` files
+- ❌ Hardcode secrets in source code
+- ❌ Share secrets via email/chat
+- ❌ Use production keys in development
+- ❌ Log secrets in application logs
+- ❌ Store secrets in container images
+- ❌ Use default/example values in production
+
+## Validation
+
+### Check Variables are Set
+
+```bash
+# In shell
+echo $OPENAI_API_KEY
+env | grep OPENAI
+
+# In Python
+import os
+print(os.getenv('OPENAI_API_KEY'))
+
+# In container
+docker exec langshazam env | grep OPENAI
+kubectl exec <pod> -- env | grep OPENAI
+```
+
+### Test Configuration
+
+```bash
+# Test server starts
+curl http://localhost:10000/
+
+# Check logs for errors
+docker logs langshazam
+kubectl logs <pod>
+
+# Verify OpenAI connection
+# Send a test audio file via WebSocket
+```
+
+## Troubleshooting
+
+### "OPENAI_API_KEY not found"
+
+**Cause**: Environment variable not set
+
+**Fix:**
+```bash
+# Check if set
+echo $OPENAI_API_KEY
+
+# Set it
+export OPENAI_API_KEY=sk-...
+
+# For Docker
+docker run -e OPENAI_API_KEY=sk-... langshazam
+
+# For Kubernetes
+kubectl edit secret language-detector-secrets
+```
+
+### "Invalid API key"
+
+**Cause**: API key is wrong or expired
+
+**Fix:**
+1. Verify key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+2. Check for extra spaces or newlines
+3. Regenerate key if needed
+4. Update environment variable
+5. Restart service
+
+### Variables Not Taking Effect
+
+**Cause**: Service not restarted after changes
+
+**Fix:**
+```bash
+# Docker
+docker-compose restart
+
+# Kubernetes
+kubectl rollout restart deployment/language-detector
+
+# Render
+# Automatic on save, or manual deploy
+```
+
+### Debug Mode Not Working
+
+**Cause**: Value must be exactly "true" (lowercase)
+
+**Fix:**
+```bash
+# Wrong
+export DEBUG=True
+export DEBUG=1
+
+# Correct
+export DEBUG=true
+```
+
+## Complete Example
+
+### Development
+
+```bash
+# .env file
+OPENAI_API_KEY=sk-...
+DEBUG=true
+LOGGING_LEVEL=DEBUG
+PORT=10000
+```
+
+### Production (Docker)
+
+```yaml
+# docker-compose.yml
+services:
+  langshazam:
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEBUG=false
+      - LOGGING_LEVEL=INFO
+      - PORT=10000
+      - MAX_CONNECTIONS=100
+      - MAX_AUDIO_SIZE_MB=5
+```
+
+### Production (Kubernetes)
+
+```yaml
+# deployment.yaml
+env:
+- name: OPENAI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: language-detector-secrets
+      key: openai-api-key
+- name: LOGGING_LEVEL
+  value: "INFO"
+- name: DEBUG
+  value: "false"
+- name: PORT
+  value: "10000"
+```
+
+### Production (Render)
+
+```
+OPENAI_API_KEY=sk-...
+PORT=10000
+PYTHON_VERSION=3.9.0
+DEBUG=false
+LOGGING_LEVEL=INFO
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CORS Setup" icon="shield" href="/deployment/cors-setup">
+    Configure allowed origins for your frontend
+  </Card>
+  <Card title="Deployment Options" icon="rocket" href="/deployment/overview">
+    Choose your deployment platform
+  </Card>
+</CardGroup>

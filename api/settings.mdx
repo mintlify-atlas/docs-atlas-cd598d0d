@@ -1,0 +1,276 @@
+---
+title: 'Settings Configuration'
+description: 'Backend configuration settings and environment variables'
+---
+
+## Overview
+
+The settings module contains all backend configuration including server settings, CORS origins, audio processing parameters, OpenAI configuration, and logging setup.
+
+**Location**: `backend/src/config/settings.py`
+
+## Server Configuration
+
+```python
+SERVER_CONFIG = {
+    "host": "0.0.0.0",
+    "port": int(os.getenv("PORT", "10000")),
+    "debug": os.getenv("DEBUG", "false").lower() == "true"
+}
+```
+
+<ParamField path="host" type="str" default="0.0.0.0">
+  Server bind address. `0.0.0.0` makes the server accessible from any network interface.
+</ParamField>
+
+<ParamField path="port" type="int" default={10000}>
+  Server port number. Configurable via `PORT` environment variable.
+</ParamField>
+
+<ParamField path="debug" type="bool" default={false}>
+  Debug mode flag. Set `DEBUG=true` environment variable to enable. Converts string to boolean.
+</ParamField>
+
+### Example Usage
+
+```python
+from config.settings import SERVER_CONFIG
+
+if __name__ == "__main__":
+    uvicorn.run(
+        app,
+        host=SERVER_CONFIG["host"],
+        port=SERVER_CONFIG["port"],
+        debug=SERVER_CONFIG["debug"]
+    )
+```
+
+## CORS Origins
+
+```python
+CORS_ORIGINS = [
+    "https://www.langshazam.com",
+    "https://langshazam.com",
+    "http://www.langshazam.com",
+    "http://langshazam.com",
+    "http://localhost:3000",  # For local development
+    "http://localhost:5173",  # For Vite development server
+    "http://127.0.0.1:3000",  # Alternative local development
+    "http://127.0.0.1:5173"   # Alternative Vite development server
+]
+```
+
+List of allowed origins for Cross-Origin Resource Sharing (CORS). Used by FastAPI's `CORSMiddleware`.
+
+### Categories
+
+- **Production**: `langshazam.com` (HTTP and HTTPS, with and without `www`)
+- **Development**: `localhost` and `127.0.0.1` on ports 3000 and 5173
+
+### Usage
+
+From `main.py:28-34`:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+## Audio Configuration
+
+```python
+AUDIO_CONFIG = {
+    "min_audio_size": 20000,  # Minimum size in bytes
+    "chunk_size": 128 * 1024,  # 128KB chunks
+    "min_audio_length": 4000,  # 4 seconds minimum
+    "max_audio_length": 15000,  # 15 seconds maximum
+    "audio_bits_per_second": 16000
+}
+```
+
+<ParamField path="min_audio_size" type="int" default={20000}>
+  Minimum audio buffer size in bytes before processing. Approximately 1 second of audio at 16 kbps.
+</ParamField>
+
+<ParamField path="chunk_size" type="int" default={131072}>
+  WebSocket chunk size in bytes (128KB). Used for streaming audio data.
+</ParamField>
+
+<ParamField path="min_audio_length" type="int" default={4000}>
+  Minimum audio length in milliseconds (4 seconds). Quality threshold for reliable detection.
+</ParamField>
+
+<ParamField path="max_audio_length" type="int" default={15000}>
+  Maximum audio length in milliseconds (15 seconds). Prevents excessive processing time.
+</ParamField>
+
+<ParamField path="audio_bits_per_second" type="int" default={16000}>
+  Audio bitrate in bits per second (16 kbps). Standard bitrate for speech recognition.
+</ParamField>
+
+### Example Usage
+
+```python
+from config.settings import AUDIO_CONFIG
+
+MIN_AUDIO_SIZE = AUDIO_CONFIG["min_audio_size"]
+
+if total_size >= MIN_AUDIO_SIZE:
+    # Process audio
+    pass
+```
+
+## OpenAI Configuration
+
+```python
+OPENAI_CONFIG = {
+    "model": "whisper-1",
+    "max_concurrent_calls": 3
+}
+```
+
+<ParamField path="model" type="str" default="whisper-1">
+  OpenAI Whisper model to use for audio transcription and language detection.
+</ParamField>
+
+<ParamField path="max_concurrent_calls" type="int" default={3}>
+  Maximum number of concurrent OpenAI API calls. Additional requests are queued.
+</ParamField>
+
+### Example Usage
+
+```python
+from config.settings import OPENAI_CONFIG
+
+processor = AudioProcessor(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    max_concurrent_calls=OPENAI_CONFIG["max_concurrent_calls"]
+)
+
+response = await client.audio.transcriptions.create(
+    model=OPENAI_CONFIG["model"],
+    file=audio_file,
+    response_format="verbose_json"
+)
+```
+
+## Logging Configuration
+
+```python
+LOGGING_CONFIG = {
+    "level": "INFO",
+    "format": "%(asctime)s [%(levelname)s] %(message)s",
+    "datefmt": "%Y-%m-%d %H:%M:%S"
+}
+```
+
+<ParamField path="level" type="str" default="INFO">
+  Logging level. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+</ParamField>
+
+<ParamField path="format" type="str" default="%(asctime)s [%(levelname)s] %(message)s">
+  Log message format string. Includes timestamp, level, and message.
+</ParamField>
+
+<ParamField path="datefmt" type="str" default="%Y-%m-%d %H:%M:%S">
+  Date/time format for log timestamps.
+</ParamField>
+
+### Example Usage
+
+From `main.py:16-22`:
+
+```python
+logging.basicConfig(
+    level=getattr(logging, LOGGING_CONFIG["level"]),
+    format=LOGGING_CONFIG["format"],
+    datefmt=LOGGING_CONFIG["datefmt"]
+)
+logger = logging.getLogger(__name__)
+```
+
+### Example Output
+
+```
+2026-03-08 10:30:45 [INFO] [a1b2c3d4] WebSocket connection established
+2026-03-08 10:30:47 [INFO] [a1b2c3d4] Processing audio data of size: 24500 bytes
+2026-03-08 10:30:49 [INFO] [a1b2c3d4] Language detected: en in 2.34s
+```
+
+## Environment Variables
+
+The following environment variables are used:
+
+<ParamField path="PORT" type="int" default={10000}>
+  Server port number. Used by `SERVER_CONFIG`.
+</ParamField>
+
+<ParamField path="DEBUG" type="bool" default={false}>
+  Debug mode flag. Set to `"true"` to enable. Used by `SERVER_CONFIG`.
+</ParamField>
+
+<ParamField path="OPENAI_API_KEY" type="str" required>
+  OpenAI API key for Whisper transcription. Required for audio processing.
+</ParamField>
+
+### Example .env File
+
+```bash
+PORT=10000
+DEBUG=false
+OPENAI_API_KEY=sk-...
+```
+
+## Type Hints
+
+```python
+from typing import Dict, Any
+```
+
+The module imports type hints but currently doesn't use them. Consider adding:
+
+```python
+SERVER_CONFIG: Dict[str, Any] = {...}
+CORS_ORIGINS: List[str] = [...]
+AUDIO_CONFIG: Dict[str, int] = {...}
+OPENAI_CONFIG: Dict[str, Any] = {...}
+LOGGING_CONFIG: Dict[str, str] = {...}
+```
+
+## Dependencies
+
+```python
+import os
+from typing import Dict, Any
+```
+
+## Best Practices
+
+### Adding New Settings
+
+1. Group related settings in dictionaries
+2. Use descriptive names with units in comments
+3. Provide sensible defaults
+4. Use environment variables for deployment-specific values
+5. Document purpose and valid values
+
+### Environment Variable Patterns
+
+```python
+# String with default
+value = os.getenv("VAR_NAME", "default_value")
+
+# Integer with default
+value = int(os.getenv("VAR_NAME", "10000"))
+
+# Boolean with default
+value = os.getenv("VAR_NAME", "false").lower() == "true"
+
+# Required (no default)
+value = os.getenv("REQUIRED_VAR")  # Returns None if not set
+```

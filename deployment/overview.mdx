@@ -1,0 +1,116 @@
+---
+title: Deployment Overview
+description: Choose the right deployment option for LangShazam
+---
+
+LangShazam can be deployed to various platforms depending on your infrastructure needs, scalability requirements, and operational expertise.
+
+## Deployment Options
+
+LangShazam supports multiple deployment strategies:
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="/deployment/docker">
+    Containerized deployment for any environment
+  </Card>
+  <Card title="Kubernetes" icon="kubernetes" href="/deployment/kubernetes">
+    Production-grade orchestration with auto-scaling
+  </Card>
+  <Card title="AWS EC2" icon="aws" href="/deployment/ec2">
+    Traditional server deployment with CloudFormation
+  </Card>
+  <Card title="Render" icon="cloud" href="/deployment/render">
+    One-click deployment to managed platform
+  </Card>
+</CardGroup>
+
+## Comparison Matrix
+
+| Feature | Docker | Kubernetes | EC2 | Render |
+|---------|--------|------------|-----|--------|
+| **Complexity** | Low | High | Medium | Very Low |
+| **Auto-scaling** | Manual | Automatic (HPA) | Manual | Automatic |
+| **Cost** | Infrastructure only | Infrastructure + overhead | EC2 + EBS costs | Pay-per-use |
+| **Setup Time** | 5 minutes | 30-60 minutes | 15-30 minutes | 2 minutes |
+| **Best For** | Development, testing | Production at scale | Custom infrastructure | Quick deployments |
+| **Load Balancing** | Manual | Built-in | Nginx included | Automatic |
+| **SSL/HTTPS** | Manual | cert-manager | Let's Encrypt | Automatic |
+
+## Choosing the Right Option
+
+### Use Docker When:
+- Running locally for development
+- Deploying to any cloud provider or VPS
+- You need maximum portability
+- You want simple container management
+
+### Use Kubernetes When:
+- You need production-grade scalability
+- You require automatic failover and healing
+- You're serving high-traffic applications
+- You have DevOps expertise
+
+### Use EC2 When:
+- You prefer AWS infrastructure
+- You need custom networking or security groups
+- You want full control over the server
+- You're using other AWS services
+
+### Use Render When:
+- You want the fastest deployment
+- You prefer managed infrastructure
+- You're prototyping or building an MVP
+- You don't want to manage servers
+
+## Architecture Overview
+
+All deployment options run the same core components:
+
+```
+┌─────────────────────────────────────────┐
+│           Client Application            │
+│      (Browser/Mobile WebSocket)         │
+└──────────────────┬──────────────────────┘
+                   │
+                   │ WSS Connection
+                   │
+┌──────────────────▼──────────────────────┐
+│         LangShazam Backend              │
+│  ┌────────────────────────────────┐    │
+│  │  FastAPI + Uvicorn Server      │    │
+│  │  - WebSocket Handler           │    │
+│  │  - Audio Processing            │    │
+│  │  - CORS Middleware             │    │
+│  └────────────┬───────────────────┘    │
+│               │                         │
+│  ┌────────────▼───────────────────┐    │
+│  │     OpenAI Whisper API         │    │
+│  │  (Language Detection Service)  │    │
+│  └────────────────────────────────┘    │
+└─────────────────────────────────────────┘
+```
+
+## System Requirements
+
+Before deploying, ensure you meet the [system requirements](/deployment/requirements).
+
+## Environment Configuration
+
+All deployments require proper [environment variables](/deployment/environment-variables) and [CORS setup](/deployment/cors-setup).
+
+## Next Steps
+
+<Steps>
+  <Step title="Review Requirements">
+    Check the [system requirements](/deployment/requirements) for your chosen platform
+  </Step>
+  <Step title="Configure Environment">
+    Set up [environment variables](/deployment/environment-variables) including your OpenAI API key
+  </Step>
+  <Step title="Deploy">
+    Follow the deployment guide for your chosen platform
+  </Step>
+  <Step title="Configure CORS">
+    Set up [CORS](/deployment/cors-setup) for your frontend domain
+  </Step>
+</Steps>

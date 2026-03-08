@@ -1,0 +1,550 @@
+---
+title: Kubernetes Deployment
+description: Deploy LangShazam to Kubernetes with auto-scaling and high availability
+---
+
+Deploy LangShazam to a Kubernetes cluster for production-grade scalability, automatic failover, and horizontal pod autoscaling.
+
+## Overview
+
+The Kubernetes deployment includes:
+- 2 replicas by default
+- Horizontal Pod Autoscaler (2-10 pods)
+- LoadBalancer service
+- Health probes (liveness and readiness)
+- Resource limits and requests
+- ConfigMap and Secret management
+- Optional Ingress with SSL
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Kubernetes Cluster" icon="server">
+    v1.24+ (EKS, GKE, AKS, or self-managed)
+  </Card>
+  <Card title="kubectl CLI" icon="terminal">
+    Configured to access your cluster
+  </Card>
+  <Card title="Docker Registry" icon="docker">
+    Access to ECR, Docker Hub, or similar
+  </Card>
+  <Card title="OpenAI API Key" icon="key">
+    Valid API key with Whisper access
+  </Card>
+</CardGroup>
+
+## Deployment Files
+
+All Kubernetes manifests are in `backend/deployment/kubernetes/manifests/`:
+
+- `namespace.yaml` - Dedicated namespace
+- `secrets.yaml` - OpenAI API key (base64)
+- `configmap.yaml` - Application configuration
+- `deployment.yaml` - Pod deployment spec
+- `service.yaml` - LoadBalancer service
+- `ingress.yaml` - Ingress configuration (optional)
+- `hpa.yaml` - Horizontal Pod Autoscaler
+
+## Quick Start
+
+<Steps>
+  <Step title="Build and Push Docker Image">
+    ```bash
+    cd backend
+    
+    # Build the image
+    docker build -t your-registry/langshazam:latest -f deployment/docker/Dockerfile .
+    
+    # Push to registry
+    docker push your-registry/langshazam:latest
+    ```
+  </Step>
+  
+  <Step title="Update Image URL">
+    Edit `kubernetes/manifests/deployment.yaml` and replace `${DOCKER_IMAGE_URL}` at line 19:
+    
+    ```yaml
+    containers:
+    - name: language-detector
+      image: your-registry/langshazam:latest  # Update this
+    ```
+  </Step>
+  
+  <Step title="Encode API Key">
+    ```bash
+    echo -n "your-openai-api-key" | base64
+    ```
+    
+    Update `kubernetes/manifests/secrets.yaml` at line 9:
+    ```yaml
+    data:
+      openai-api-key: eW91ci1iYXNlNjQtZW5jb2RlZC1rZXk=
+    ```
+  </Step>
+  
+  <Step title="Apply Kubernetes Resources">
+    ```bash
+    cd backend/deployment
+    
+    kubectl apply -f kubernetes/manifests/namespace.yaml
+    kubectl apply -f kubernetes/manifests/secrets.yaml
+    kubectl apply -f kubernetes/manifests/configmap.yaml
+    kubectl apply -f kubernetes/manifests/deployment.yaml
+    kubectl apply -f kubernetes/manifests/service.yaml
+    kubectl apply -f kubernetes/manifests/hpa.yaml
+    ```
+  </Step>
+  
+  <Step title="Verify Deployment">
+    ```bash
+    # Check pods
+    kubectl get pods -n language-detector
+    
+    # Check service
+    kubectl get svc -n language-detector
+    
+    # Get external IP (may take a few minutes)
+    kubectl get svc language-detector -n language-detector
+    ```
+  </Step>
+</Steps>
+
+## Manifest Details
+
+### Namespace
+
+From `kubernetes/manifests/namespace.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: language-detector
+  labels:
+    name: language-detector
+```
+
+### Secrets
+
+From `kubernetes/manifests/secrets.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: language-detector-secrets
+type: Opaque
+data:
+  # The value below is a placeholder; it should be replaced with a base64-encoded API key
+  # To encode: echo -n "your-api-key" | base64
+  openai-api-key: ${BASE64_ENCODED_OPENAI_API_KEY}
+```
+
+<Warning>
+Never commit your actual API key to version control. Use a secret management tool like AWS Secrets Manager, HashiCorp Vault, or sealed-secrets.
+</Warning>
+
+### ConfigMap
+
+From `kubernetes/manifests/configmap.yaml`:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: language-detector-config
+data:
+  # Application configuration
+  # These values can be adjusted based on environment
+  LOGGING_LEVEL: "INFO"
+  MAX_CONNECTIONS: "100"
+  MAX_AUDIO_SIZE_MB: "5"
+```
+
+### Deployment
+
+From `kubernetes/manifests/deployment.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: language-detector
+  labels:
+    app: language-detector
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: language-detector
+  template:
+    metadata:
+      labels:
+        app: language-detector
+    spec:
+      containers:
+      - name: language-detector
+        image: ${DOCKER_IMAGE_URL}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 10000
+          name: http
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: language-detector-secrets
+              key: openai-api-key
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 10000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 10000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+```
+
+**Key Features:**
+- **2 replicas** for high availability
+- **Resource requests**: 100m CPU, 256Mi RAM (minimum guaranteed)
+- **Resource limits**: 500m CPU, 512Mi RAM (maximum allowed)
+- **Liveness probe**: Restarts unhealthy pods after 30s
+- **Readiness probe**: Marks pods ready after 5s
+
+### Service
+
+From `kubernetes/manifests/service.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: language-detector
+  labels:
+    app: language-detector
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 10000
+    protocol: TCP
+    name: http
+  selector:
+    app: language-detector
+```
+
+This creates a LoadBalancer that routes traffic from port 80 to container port 10000.
+
+### Horizontal Pod Autoscaler
+
+From `kubernetes/manifests/hpa.yaml`:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: language-detector-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: language-detector
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
+**Auto-scaling behavior:**
+- Starts with 2 pods
+- Scales up to 10 pods maximum
+- Triggers when CPU or memory exceeds 70% average utilization
+
+## Ingress Setup (Optional)
+
+For custom domain and SSL, configure the Ingress.
+
+### Install Nginx Ingress Controller
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
+```
+
+### Update Ingress Manifest
+
+From `kubernetes/manifests/ingress.yaml`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: language-detector-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # Add these annotations for SSL if needed
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: ${YOUR_DOMAIN}  # e.g., api.language-detector.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: language-detector
+            port:
+              number: 80
+  # Add this section for SSL if needed
+  # tls:
+  # - hosts:
+  #   - ${YOUR_DOMAIN}
+  #   secretName: language-detector-tls
+```
+
+Replace `${YOUR_DOMAIN}` with your domain, then apply:
+
+```bash
+kubectl apply -f kubernetes/manifests/ingress.yaml
+```
+
+### SSL with cert-manager
+
+<Steps>
+  <Step title="Install cert-manager">
+    ```bash
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+    ```
+  </Step>
+  
+  <Step title="Create ClusterIssuer">
+    Create `letsencrypt-issuer.yaml`:
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: letsencrypt-prod
+    spec:
+      acme:
+        server: https://acme-v02.api.letsencrypt.org/directory
+        email: your-email@example.com
+        privateKeySecretRef:
+          name: letsencrypt-prod
+        solvers:
+        - http01:
+            ingress:
+              class: nginx
+    ```
+    
+    ```bash
+    kubectl apply -f letsencrypt-issuer.yaml
+    ```
+  </Step>
+  
+  <Step title="Update Ingress">
+    Uncomment the SSL annotations and TLS section in `ingress.yaml`, then reapply.
+  </Step>
+</Steps>
+
+## Monitoring
+
+### Check Pod Status
+
+```bash
+# List all pods
+kubectl get pods -n language-detector
+
+# Describe a specific pod
+kubectl describe pod <pod-name> -n language-detector
+
+# View logs
+kubectl logs <pod-name> -n language-detector
+
+# Follow logs
+kubectl logs -f <pod-name> -n language-detector
+```
+
+### Check HPA Status
+
+```bash
+kubectl get hpa -n language-detector
+
+# Watch HPA in real-time
+kubectl get hpa -n language-detector -w
+```
+
+### Check Service and Endpoints
+
+```bash
+# Get external IP
+kubectl get svc language-detector -n language-detector
+
+# View endpoints
+kubectl get endpoints language-detector -n language-detector
+```
+
+### Access Metrics
+
+```bash
+# Get external IP
+EXTERNAL_IP=$(kubectl get svc language-detector -n language-detector -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+# Test endpoint
+curl http://$EXTERNAL_IP/
+
+# Get metrics
+curl http://$EXTERNAL_IP/metrics
+```
+
+## Scaling
+
+### Manual Scaling
+
+```bash
+# Scale to 5 replicas
+kubectl scale deployment language-detector --replicas=5 -n language-detector
+
+# Verify
+kubectl get pods -n language-detector
+```
+
+### Adjust HPA Thresholds
+
+Edit `hpa.yaml` to change scaling behavior:
+
+```yaml
+metrics:
+- type: Resource
+  resource:
+    name: cpu
+    target:
+      type: Utilization
+      averageUtilization: 50  # Changed from 70
+```
+
+Reapply:
+```bash
+kubectl apply -f kubernetes/manifests/hpa.yaml
+```
+
+## Updates and Rollbacks
+
+### Rolling Update
+
+```bash
+# Build and push new image with version tag
+docker build -t your-registry/langshazam:v2 -f deployment/docker/Dockerfile .
+docker push your-registry/langshazam:v2
+
+# Update deployment
+kubectl set image deployment/language-detector \
+  language-detector=your-registry/langshazam:v2 \
+  -n language-detector
+
+# Monitor rollout
+kubectl rollout status deployment/language-detector -n language-detector
+```
+
+### Rollback
+
+```bash
+# Rollback to previous version
+kubectl rollout undo deployment/language-detector -n language-detector
+
+# Rollback to specific revision
+kubectl rollout undo deployment/language-detector --to-revision=2 -n language-detector
+
+# View rollout history
+kubectl rollout history deployment/language-detector -n language-detector
+```
+
+## Troubleshooting
+
+### Pods Not Starting
+
+```bash
+# Check pod events
+kubectl describe pod <pod-name> -n language-detector
+
+# Common issues:
+# - Image pull errors (check registry credentials)
+# - Insufficient resources (check node capacity)
+# - Missing secrets (verify secrets.yaml applied)
+```
+
+### Service Not Accessible
+
+```bash
+# Check service
+kubectl get svc language-detector -n language-detector
+
+# Check endpoints
+kubectl get endpoints language-detector -n language-detector
+
+# If endpoints are empty, pods aren't ready
+kubectl get pods -n language-detector
+```
+
+### HPA Not Scaling
+
+```bash
+# Check metrics server is installed
+kubectl top nodes
+kubectl top pods -n language-detector
+
+# If metrics-server not found:
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+## Cleanup
+
+```bash
+# Delete all resources
+kubectl delete namespace language-detector
+
+# Or delete individually
+kubectl delete -f kubernetes/manifests/hpa.yaml
+kubectl delete -f kubernetes/manifests/ingress.yaml
+kubectl delete -f kubernetes/manifests/service.yaml
+kubectl delete -f kubernetes/manifests/deployment.yaml
+kubectl delete -f kubernetes/manifests/configmap.yaml
+kubectl delete -f kubernetes/manifests/secrets.yaml
+kubectl delete -f kubernetes/manifests/namespace.yaml
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/deployment/environment-variables">
+    Customize application configuration
+  </Card>
+  <Card title="CORS Setup" icon="shield" href="/deployment/cors-setup">
+    Configure allowed origins
+  </Card>
+</CardGroup>

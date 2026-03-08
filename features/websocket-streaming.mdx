@@ -1,0 +1,369 @@
+---
+title: 'WebSocket Streaming'
+description: 'Learn how LangShazam uses WebSockets for real-time audio streaming and bidirectional communication'
+icon: 'arrows-left-right'
+---
+
+## Overview
+
+LangShazam uses WebSocket connections to enable real-time, bidirectional communication between the client and server. This allows audio data to be streamed continuously while receiving immediate feedback on detection results.
+
+## Why WebSockets?
+
+<CardGroup cols={2}>
+  <Card title="Low Latency" icon="bolt">
+    WebSockets maintain persistent connections, eliminating HTTP request overhead
+  </Card>
+  <Card title="Bidirectional" icon="arrow-right-arrow-left">
+    Server can push results immediately without client polling
+  </Card>
+  <Card title="Efficient" icon="gauge-high">
+    Stream audio chunks as they're captured without waiting for complete recording
+  </Card>
+  <Card title="Real-time" icon="clock">
+    Perfect for live audio processing and instant language detection
+  </Card>
+</CardGroup>
+
+## Connection Lifecycle
+
+<Steps>
+  <Step title="Server Discovery">
+    Client discovers the appropriate WebSocket endpoint based on environment (production vs development)
+  </Step>
+  
+  <Step title="Connection Establishment">
+    WebSocket connection is opened when user starts language detection
+  </Step>
+  
+  <Step title="Audio Streaming">
+    Client sends binary audio chunks as they're captured from the microphone
+  </Step>
+  
+  <Step title="Result Delivery">
+    Server processes audio and sends JSON response with detected language
+  </Step>
+  
+  <Step title="Connection Closure">
+    Connection is closed after result delivery or on error
+  </Step>
+</Steps>
+
+## Client Implementation
+
+### Establishing Connection
+
+The frontend establishes a WebSocket connection when starting detection:
+
+```javascript App.js (lines 103-116)
+// Establish WebSocket connection
+console.log('Attempting to connect to WebSocket server:', {
+  url: serverUrl,
+  protocol: window.location.protocol,
+  hostname: window.location.hostname,
+  port: window.location.port,
+  timestamp: new Date().toISOString()
+});
+
+const ws = new WebSocket(serverUrl);
+
+ws.onopen = () => {
+  console.log("WebSocket connection established successfully");
+  setIsConnected(true);
+};
+```
+
+### Sending Audio Data
+
+Audio chunks are sent as binary data:
+
+```javascript App.js (lines 167-172)
+recorder.ondataavailable = async (event) => {
+  if (event.data.size > 0) {
+    console.log("Received audio chunk of size:", event.data.size);
+    ws.send(event.data);
+  }
+};
+```
+
+The MediaRecorder is configured to send chunks every 4 seconds:
+
+```javascript App.js (line 189)
+recorder.start(4000); // Collect 4 seconds of audio before sending
+```
+
+### Handling Responses
+
+The client listens for JSON messages from the server:
+
+```javascript App.js (lines 174-187)
+ws.onmessage = (event) => {
+  console.log("Received message from server:", event.data);
+  const response = JSON.parse(event.data);
+  if (response.status === 'success') {
+    setLanguage(response.data.language);
+    showToast(`Language detected: ${response.data.language}`, 'success');
+  } else {
+    setError(response.message);
+    showToast(response.message, 'error');
+  }
+  setIsListening(false);
+  stream.getTracks().forEach(track => track.stop());
+  ws.close();
+};
+```
+
+### Error Handling
+
+Robust error handling ensures a smooth user experience:
+
+```javascript App.js (lines 118-153)
+ws.onclose = (event) => {
+  console.log("WebSocket connection closed:", {
+    code: event.code,
+    reason: event.reason,
+    wasClean: event.wasClean,
+    timestamp: new Date().toISOString(),
+    readyState: ws.readyState,
+    url: ws.url,
+    currentOrigin: window.location.origin
+  });
+  setIsConnected(false);
+};
+
+ws.onerror = (event) => {
+  console.error('WebSocket error details:', {
+    readyState: ws.readyState,
+    url: ws.url,
+    event: event,
+    timestamp: new Date().toISOString(),
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    port: window.location.port,
+    currentOrigin: window.location.origin,
+    currentHost: window.location.host,
+    errorMessage: event.message || 'Unknown error',
+    errorType: event.type,
+    errorTarget: event.target?.url || 'Unknown target'
+  });
+  setIsConnected(false);
+  setError('Connection error occurred');
+  showToast('Connection error occurred', 'error');
+  setIsListening(false);
+  setIsRequestingPermission(false);
+  stream.getTracks().forEach(track => track.stop());
+  ws.close();
+};
+```
+
+## Server Implementation
+
+The backend `WebSocketManager` handles all WebSocket connections:
+
+### Connection Acceptance
+
+```python websocket_manager.py (lines 18-27)
+async def handle_connection(self, websocket: WebSocket):
+    connection_id = str(uuid.uuid4())[:8]  # Using shorter ID for readability
+    await websocket.accept()
+    
+    self.metrics.active_connections += 1
+    self.metrics.total_requests += 1
+    
+    start_time = time.time()
+    logger.info(f"[{connection_id}] WebSocket connection established")
+    logger.info(f"[{connection_id}] Active connections: {self.metrics.active_connections}")
+```
+
+<Note>
+  Each connection gets a unique 8-character ID for request tracing and debugging.
+</Note>
+
+### Receiving Audio Data
+
+The server buffers incoming audio chunks until sufficient data is available:
+
+```python websocket_manager.py (lines 29-53)
+buffer = []
+total_size = 0
+MIN_AUDIO_SIZE = 20000  # Minimum size in bytes (about 1 second of audio)
+
+try:
+    while True:
+        data = await websocket.receive_bytes()
+        if not data:
+            logger.debug(f"[{connection_id}] Received empty data chunk")
+            continue
+
+        buffer.append(data)
+        total_size += len(data)
+        logger.debug(f"[{connection_id}] Received audio chunk, total size: {total_size} bytes")
+        
+        # Only process when we have enough data
+        if total_size >= MIN_AUDIO_SIZE:
+            audio_data = b''.join(buffer)
+            logger.info(f"[{connection_id}] Processing audio data of size: {len(audio_data)} bytes")
+            
+            result = await self.audio_processor.process_audio(
+                audio_data, 
+                self.metrics,
+                connection_id
+            )
+```
+
+### Sending Results
+
+Successful detection results are sent as JSON:
+
+```python websocket_manager.py (lines 65-72)
+await websocket.send_json({
+    "status": "success",
+    "data": result,
+    "timestamp": datetime.now().isoformat(),
+    "connection_id": connection_id
+})
+logger.info(f"[{connection_id}] Language detected: {result['language']} in {result.get('processing_time', 0):.2f}s")
+break
+```
+
+### Error Responses
+
+Errors are communicated back to the client:
+
+```python websocket_manager.py (lines 55-63)
+if "error" in result:
+    logger.error(f"[{connection_id}] Processing error: {result['error']}")
+    await websocket.send_json({
+        "status": "error",
+        "message": result["error"],
+        "timestamp": datetime.now().isoformat(),
+        "connection_id": connection_id
+    })
+    break
+```
+
+### Connection Cleanup
+
+Proper cleanup ensures resources are released:
+
+```python websocket_manager.py (lines 74-92)
+await websocket.close()
+connection_time = time.time() - start_time
+logger.info(f"[{connection_id}] Connection closed. Duration: {connection_time:.2f}s")
+
+except WebSocketDisconnect:
+    logger.info(f"[{connection_id}] Connection disconnected")
+except Exception as e:
+    self.metrics.errors += 1
+    logger.error(f"[{connection_id}] WebSocket error: {e}")
+    await websocket.send_json({
+        "status": "error",
+        "message": str(e),
+        "timestamp": datetime.now().isoformat(),
+        "connection_id": connection_id
+    })
+    await websocket.close()
+finally:
+    self.metrics.active_connections -= 1
+    self.metrics.log_current_metrics(connection_id)
+```
+
+## Message Protocol
+
+### Client to Server
+
+<Accordion title="Binary Audio Data">
+  The client sends raw binary audio data in MP4 format. Each message contains a chunk of audio data captured from the microphone.
+
+  **Format**: Binary data (Blob/ArrayBuffer)  
+  **Content-Type**: audio/mp4  
+  **Typical Size**: Varies, sent every 4 seconds of recording
+</Accordion>
+
+### Server to Client
+
+<Accordion title="Success Response">
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "language": "en",
+      "confidence": 0.9,
+      "processing_time": 1.23,
+      "connection_id": "abc12345"
+    },
+    "timestamp": "2026-03-08T10:30:45.123456",
+    "connection_id": "abc12345"
+  }
+  ```
+</Accordion>
+
+<Accordion title="Error Response">
+  ```json
+  {
+    "status": "error",
+    "message": "Error description",
+    "timestamp": "2026-03-08T10:30:45.123456",
+    "connection_id": "abc12345"
+  }
+  ```
+</Accordion>
+
+## Connection States
+
+WebSocket connections progress through these states:
+
+| State | Value | Description |
+|-------|-------|-------------|
+| CONNECTING | 0 | Connection is being established |
+| OPEN | 1 | Connection is active and ready |
+| CLOSING | 2 | Connection is being closed |
+| CLOSED | 3 | Connection is closed or failed |
+
+<Tip>
+  The frontend tracks connection state with the `isConnected` state variable, which is set to `true` when `ws.onopen` fires and `false` when `ws.onclose` or `ws.onerror` fires.
+</Tip>
+
+## Server Configuration
+
+CORS origins are configured to allow connections from approved domains:
+
+```python settings.py (lines 14-23)
+CORS_ORIGINS = [
+    "https://www.langshazam.com",
+    "https://langshazam.com",
+    "http://www.langshazam.com",
+    "http://langshazam.com",
+    "http://localhost:3000",  # For local development
+    "http://localhost:5173",  # For Vite development server
+    "http://127.0.0.1:3000",  # Alternative local development
+    "http://127.0.0.1:5173"   # Alternative Vite development server
+]
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Connection Reuse" icon="recycle">
+    Create one WebSocket per detection session, don't reuse connections
+  </Card>
+  <Card title="Clean Closure" icon="xmark">
+    Always close WebSocket and stop media tracks when done
+  </Card>
+  <Card title="Error Recovery" icon="rotate">
+    Implement retry logic for connection failures
+  </Card>
+  <Card title="Logging" icon="file-lines">
+    Use connection IDs for tracing requests across client and server
+  </Card>
+</CardGroup>
+
+## Debugging
+
+The system includes extensive logging for troubleshooting:
+
+- **Client-side**: Console logs for connection events, errors, and data transmission
+- **Server-side**: Structured logging with connection IDs for request tracing
+- **Metrics**: Active connection count, total requests, processing times
+
+All log messages include the connection ID (e.g., `[abc12345]`) for easy correlation between client and server logs.

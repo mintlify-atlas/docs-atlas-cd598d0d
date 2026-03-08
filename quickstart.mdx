@@ -1,80 +1,179 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Get LangShazam running locally in minutes"
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, ensure you have the following installed:
 
-### Step 1: Set up your local environment
+- **Python 3.9+** for the backend
+- **Node.js 14+** and npm for the frontend
+- **OpenAI API Key** - Get one from [OpenAI Platform](https://platform.openai.com/api-keys)
+
+<Warning>
+You'll need an OpenAI API key with access to the Whisper API to run LangShazam. The API is not free, so monitor your usage.
+</Warning>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the LangShazam repository to your local machine:
+    
+    ```bash
+    git clone https://github.com/KocKaan/LanguageDetection.git
+    cd LanguageDetection
+    ```
+  </Step>
+
+  <Step title="Set up the backend">
+    Install the Python dependencies:
+    
+    ```bash
+    cd backend
+    pip install -r requirements.txt
+    ```
+    
+    The backend requires these packages:
+    - `fastapi==0.109.0` - Web framework
+    - `uvicorn==0.27.0` - ASGI server
+    - `openai==1.66.3` - OpenAI API client
+    - `psutil==5.9.8` - System metrics
+    - `python-multipart==0.0.9` - File upload support
+    - `websockets==12.0` - WebSocket support
+  </Step>
+
+  <Step title="Configure your OpenAI API key">
+    Set your OpenAI API key as an environment variable:
+    
+    ```bash
+    export OPENAI_API_KEY="your-api-key-here"
+    ```
+    
+    <Warning>
+    Never commit your API key to version control. Use environment variables or a `.env` file (added to `.gitignore`).
+    </Warning>
+  </Step>
+
+  <Step title="Start the backend server">
+    Run the FastAPI server using uvicorn:
+    
+    ```bash
+    uvicorn src.main:app --host 0.0.0.0 --port 10000
+    ```
+    
+    The server will start on `http://localhost:10000`. You should see:
+    ```
+    INFO:     Started server process
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    INFO:     Uvicorn running on http://0.0.0.0:10000
+    ```
+  </Step>
+
+  <Step title="Set up the frontend">
+    In a new terminal, navigate to the frontend directory and install dependencies:
+    
+    ```bash
+    cd frontend/language-detector-ui
+    npm install
+    ```
+  </Step>
+
+  <Step title="Start the frontend">
+    Start the React development server:
+    
+    ```bash
+    npm start
+    ```
+    
+    The app will open in your browser at `http://localhost:3000`.
+  </Step>
+</Steps>
+
+## Test Your Setup
+
+Once both servers are running:
+
+1. Open your browser to `http://localhost:3000`
+2. Click the **"Start Detection"** button
+3. Allow microphone access when prompted
+4. Speak in any language for 4-15 seconds
+5. The detected language will appear on screen
+
+<Tip>
+For best results, speak clearly and ensure you're in a quiet environment. The system requires at least 4 seconds of audio.
+</Tip>
+
+## API Endpoints
+
+Your local backend exposes these endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Health check - returns `{"message": "Server is running!"}` |
+| `/metrics` | GET | Server metrics including CPU, memory, and request stats |
+| `/ws` | WebSocket | Real-time language detection endpoint |
+
+## Configuration
+
+You can customize the backend behavior with environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | *Required* | Your OpenAI API key |
+| `PORT` | `10000` | Backend server port |
+| `DEBUG` | `false` | Enable debug logging |
+
+See the [Environment Variables](/deployment/environment-variables) page for the complete list.
+
+## Troubleshooting
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Microphone permission denied">
+    If your browser blocks microphone access:
+    1. Check browser permissions (usually in the address bar)
+    2. Ensure you're using HTTPS or localhost
+    3. Try a different browser (Chrome and Firefox work best)
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="WebSocket connection failed">
+    If the frontend can't connect to the backend:
+    1. Verify the backend is running on port 10000
+    2. Check that CORS is configured correctly in `settings.py`
+    3. Ensure `http://localhost:3000` is in the `CORS_ORIGINS` list
+  </Accordion>
+
+  <Accordion title="OpenAI API errors">
+    If you see API-related errors:
+    1. Verify your API key is set correctly
+    2. Check you have credits in your OpenAI account
+    3. Ensure you have access to the Whisper API
+    4. Check rate limits (max 3 concurrent calls by default)
+  </Accordion>
+
+  <Accordion title="Audio too short error">
+    If your audio is rejected:
+    1. Speak for at least 4 seconds (minimum required)
+    2. Ensure audio is being captured (check the microphone level indicator)
+    3. Verify your microphone is working in other applications
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Explore Features" icon="stars" href="/features/real-time-detection">
+    Learn about real-time detection and audio processing
+  </Card>
+  <Card title="Deploy to Production" icon="rocket" href="/deployment/overview">
+    Deploy LangShazam to your infrastructure
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Dive into the WebSocket API documentation
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture/overview">
+    Understand the system architecture
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

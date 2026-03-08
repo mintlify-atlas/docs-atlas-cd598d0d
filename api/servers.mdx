@@ -1,0 +1,332 @@
+---
+title: 'Server Regions'
+description: 'Geographic server region configuration and endpoints'
+---
+
+## Overview
+
+The servers module defines all available server regions, their WebSocket endpoints, and geographic coordinates for latency-based routing.
+
+**Location**: `backend/src/config/servers.py`
+
+## Server Regions Dictionary
+
+```python
+SERVER_REGIONS = {
+    "us-west": {...},
+    "us-east": {...},
+    "us-central": {...},
+    "eu-central": {...},
+    "ap-southeast": {...}
+}
+```
+
+Dictionary mapping region identifiers to server configuration objects.
+
+## Region Configuration Schema
+
+Each region contains the following fields:
+
+<ParamField path="url" type="str" required>
+  WebSocket base URL using `wss://` protocol
+</ParamField>
+
+<ParamField path="lat" type="float" required>
+  Geographic latitude of server location (decimal degrees)
+</ParamField>
+
+<ParamField path="lon" type="float" required>
+  Geographic longitude of server location (decimal degrees)
+</ParamField>
+
+<ParamField path="ws_path" type="str" required>
+  WebSocket endpoint path (always `"/ws"`)
+</ParamField>
+
+## Available Regions
+
+### US West (Oregon/Portland)
+
+```python
+"us-west": {
+    "url": "wss://languagedetection-9l89.onrender.com",
+    "lat": 45.5155,  # Portland, OR
+    "lon": -122.6789,
+    "ws_path": "/ws"
+}
+```
+
+<ResponseField name="Region" type="string">
+  us-west
+</ResponseField>
+
+<ResponseField name="Location" type="string">
+  Portland, Oregon, USA
+</ResponseField>
+
+<ResponseField name="Coordinates" type="string">
+  45.5155°N, 122.6789°W
+</ResponseField>
+
+<ResponseField name="WebSocket URL" type="string">
+  wss://languagedetection-9l89.onrender.com/ws
+</ResponseField>
+
+### US East (Virginia)
+
+```python
+"us-east": {
+    "url": "wss://languagedetection-virginia.onrender.com",
+    "lat": 37.5407,  # Virginia
+    "lon": -77.4360,
+    "ws_path": "/ws"
+}
+```
+
+<ResponseField name="Region" type="string">
+  us-east
+</ResponseField>
+
+<ResponseField name="Location" type="string">
+  Virginia, USA
+</ResponseField>
+
+<ResponseField name="Coordinates" type="string">
+  37.5407°N, 77.4360°W
+</ResponseField>
+
+<ResponseField name="WebSocket URL" type="string">
+  wss://languagedetection-virginia.onrender.com/ws
+</ResponseField>
+
+### US Central (Ohio)
+
+```python
+"us-central": {
+    "url": "wss://languagedetection-ohio.onrender.com",
+    "lat": 39.9612,  # Ohio
+    "lon": -82.9988,
+    "ws_path": "/ws"
+}
+```
+
+<ResponseField name="Region" type="string">
+  us-central
+</ResponseField>
+
+<ResponseField name="Location" type="string">
+  Ohio, USA
+</ResponseField>
+
+<ResponseField name="Coordinates" type="string">
+  39.9612°N, 82.9988°W
+</ResponseField>
+
+<ResponseField name="WebSocket URL" type="string">
+  wss://languagedetection-ohio.onrender.com/ws
+</ResponseField>
+
+### EU Central (Germany)
+
+```python
+"eu-central": {
+    "url": "wss://languagedetection-europe.onrender.com",
+    "lat": 48.1351,  # Munich, Germany
+    "lon": 11.5820,
+    "ws_path": "/ws"
+}
+```
+
+<ResponseField name="Region" type="string">
+  eu-central
+</ResponseField>
+
+<ResponseField name="Location" type="string">
+  Munich, Germany
+</ResponseField>
+
+<ResponseField name="Coordinates" type="string">
+  48.1351°N, 11.5820°E
+</ResponseField>
+
+<ResponseField name="WebSocket URL" type="string">
+  wss://languagedetection-europe.onrender.com/ws
+</ResponseField>
+
+### AP Southeast (Singapore)
+
+```python
+"ap-southeast": {
+    "url": "wss://languagedetection-singapore.onrender.com",
+    "lat": 1.3521,  # Singapore
+    "lon": 103.8198,
+    "ws_path": "/ws"
+}
+```
+
+<ResponseField name="Region" type="string">
+  ap-southeast
+</ResponseField>
+
+<ResponseField name="Location" type="string">
+  Singapore
+</ResponseField>
+
+<ResponseField name="Coordinates" type="string">
+  1.3521°N, 103.8198°E
+</ResponseField>
+
+<ResponseField name="WebSocket URL" type="string">
+  wss://languagedetection-singapore.onrender.com/ws
+</ResponseField>
+
+## Usage Examples
+
+### Accessing Region Configuration
+
+```python
+from config.servers import SERVER_REGIONS
+
+# Get US West configuration
+us_west = SERVER_REGIONS["us-west"]
+print(f"URL: {us_west['url']}")
+print(f"Location: {us_west['lat']}, {us_west['lon']}")
+
+# Build full WebSocket URL
+full_url = us_west["url"] + us_west["ws_path"]
+print(f"Connect to: {full_url}")
+```
+
+### Iterating Over All Regions
+
+```python
+from config.servers import SERVER_REGIONS
+
+for region_id, config in SERVER_REGIONS.items():
+    print(f"{region_id}: {config['url']}")
+```
+
+Output:
+```
+us-west: wss://languagedetection-9l89.onrender.com
+us-east: wss://languagedetection-virginia.onrender.com
+us-central: wss://languagedetection-ohio.onrender.com
+eu-central: wss://languagedetection-europe.onrender.com
+ap-southeast: wss://languagedetection-singapore.onrender.com
+```
+
+### Client-Side Region Selection
+
+```javascript
+// JavaScript example for selecting nearest server
+const SERVER_REGIONS = {
+  "us-west": {
+    url: "wss://languagedetection-9l89.onrender.com",
+    lat: 45.5155,
+    lon: -122.6789,
+    ws_path: "/ws"
+  },
+  // ... other regions
+};
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  // Haversine formula
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function selectNearestServer(userLat, userLon) {
+  let nearest = null;
+  let minDistance = Infinity;
+  
+  for (const [regionId, config] of Object.entries(SERVER_REGIONS)) {
+    const distance = calculateDistance(userLat, userLon, config.lat, config.lon);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = { regionId, ...config };
+    }
+  }
+  
+  return nearest;
+}
+
+// Get user's location and select server
+navigator.geolocation.getCurrentPosition((position) => {
+  const server = selectNearestServer(
+    position.coords.latitude,
+    position.coords.longitude
+  );
+  const ws = new WebSocket(server.url + server.ws_path);
+  console.log(`Connected to ${server.regionId}`);
+});
+```
+
+## Geographic Coverage
+
+| Region | Coverage Area | Typical Users |
+|--------|---------------|---------------|
+| us-west | Western US, Pacific | California, Oregon, Washington |
+| us-east | Eastern US, East Coast | New York, Virginia, Florida |
+| us-central | Central US, Midwest | Illinois, Ohio, Texas |
+| eu-central | Europe, Middle East | Germany, France, UK |
+| ap-southeast | Asia Pacific | Singapore, Malaysia, Indonesia |
+
+## Latency Considerations
+
+Choosing the nearest server region reduces:
+- WebSocket connection latency
+- Audio data transmission time
+- Round-trip time for responses
+
+Typical latency ranges:
+- Same region: 10-50ms
+- Adjacent region: 50-100ms
+- Cross-continent: 100-300ms
+
+## Infrastructure
+
+All servers are hosted on Render.com with:
+- Automatic HTTPS/WSS encryption
+- Global CDN distribution
+- Automatic scaling
+- Health monitoring
+
+## Adding New Regions
+
+To add a new server region:
+
+1. Deploy server to new location
+2. Obtain WebSocket URL
+3. Determine geographic coordinates
+4. Add entry to `SERVER_REGIONS`:
+
+```python
+"region-id": {
+    "url": "wss://your-server.onrender.com",
+    "lat": latitude,
+    "lon": longitude,
+    "ws_path": "/ws"
+}
+```
+
+## Best Practices
+
+### Client Implementation
+
+1. **Auto-select nearest server** based on user's geolocation
+2. **Fallback strategy** if nearest server is unavailable
+3. **Cache server selection** for repeat visits
+4. **Measure latency** with ping tests before selecting
+
+### Server Management
+
+1. **Keep coordinates accurate** for optimal routing
+2. **Monitor all regions** for availability
+3. **Load balance** within regions if traffic is high
+4. **Update URLs** if servers are migrated

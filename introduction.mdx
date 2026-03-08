@@ -1,0 +1,98 @@
+---
+title: "Welcome to LangShazam"
+description: "Real-time spoken language detection powered by OpenAI Whisper API"
+---
+
+<img
+  className="block dark:hidden"
+  src="https://media.brand.dev/0159604e-caab-496e-bca2-2ccbd6bb38e3.png"
+  alt="LangShazam Logo"
+  width="200"
+/>
+<img
+  className="hidden dark:block"
+  src="https://media.brand.dev/c1886772-4a98-4120-accc-e2685146bd5f.png"
+  alt="LangShazam Logo"
+  width="200"
+/>
+
+## What is LangShazam?
+
+LangShazam is a real-time language detection service that identifies spoken languages instantly using your microphone. Powered by OpenAI's Whisper API, it provides accurate language identification through a simple, intuitive web interface.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get started with LangShazam in minutes
+  </Card>
+  <Card title="Supported Languages" icon="globe" href="/supported-languages">
+    View all supported languages
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the WebSocket API
+  </Card>
+  <Card title="Deploy Your Own" icon="server" href="/deployment/overview">
+    Deploy LangShazam to your infrastructure
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Real-time Language Detection" icon="microphone">
+    Detect spoken languages in real-time using your microphone with WebSocket-based streaming for instant results.
+  </Accordion>
+  
+  <Accordion title="OpenAI Whisper Integration" icon="brain">
+    Leverages OpenAI's state-of-the-art Whisper model for highly accurate speech recognition and language identification.
+  </Accordion>
+  
+  <Accordion title="Multi-Platform Deployment" icon="cloud">
+    Deploy anywhere with support for Docker, Kubernetes, EC2, and Render. Scale from development to production seamlessly.
+  </Accordion>
+  
+  <Accordion title="Performance Monitoring" icon="chart-line">
+    Built-in server metrics and performance monitoring to track system health and optimize resource usage.
+  </Accordion>
+</AccordionGroup>
+
+## How It Works
+
+<Steps>
+  <Step title="User speaks into microphone">
+    The React frontend captures audio from the user's microphone and streams it in real-time.
+  </Step>
+  
+  <Step title="Audio is processed via WebSocket">
+    Audio data is sent to the FastAPI backend over a WebSocket connection for low-latency processing.
+  </Step>
+  
+  <Step title="Whisper analyzes the audio">
+    The backend sends audio to OpenAI's Whisper API, which transcribes and identifies the language.
+  </Step>
+  
+  <Step title="Results displayed instantly">
+    The detected language is returned to the frontend and displayed to the user with visual feedback.
+  </Step>
+</Steps>
+
+## Architecture Overview
+
+LangShazam consists of two main components:
+
+- **Backend**: FastAPI server with WebSocket support, audio processing, and OpenAI Whisper integration
+- **Frontend**: React-based web application with real-time audio capture and visual feedback
+
+<Card title="Learn More" icon="book" href="/architecture/overview">
+  Explore the complete architecture documentation
+</Card>
+
+## Ready to Get Started?
+
+<CardGroup cols={2}>
+  <Card title="Try the Demo" icon="play" href="https://langshazam.com">
+    Experience LangShazam live
+  </Card>
+  <Card title="View on GitHub" icon="github" href="https://github.com/KocKaan/LanguageDetection">
+    Check out the source code
+  </Card>
+</CardGroup>

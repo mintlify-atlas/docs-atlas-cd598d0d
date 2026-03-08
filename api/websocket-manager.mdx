@@ -1,0 +1,249 @@
+---
+title: 'WebSocketManager'
+description: 'WebSocket connection management and audio processing coordination'
+---
+
+## Overview
+
+The `WebSocketManager` class manages WebSocket connections and coordinates audio processing with the AudioProcessor.
+
+**Location**: `backend/src/websocket_manager.py:9-92`
+
+## Class Definition
+
+```python
+class WebSocketManager:
+    """
+    Manages WebSocket connections and coordinates audio processing.
+    Implements connection tracing for better request tracking.
+    """
+```
+
+## Constructor
+
+```python
+def __init__(self, audio_processor, metrics)
+```
+
+Initializes the WebSocketManager with audio processor and metrics dependencies.
+
+### Parameters
+
+<ParamField path="audio_processor" type="AudioProcessor" required>
+  AudioProcessor instance for handling audio processing and OpenAI API calls
+</ParamField>
+
+<ParamField path="metrics" type="ServerMetrics" required>
+  ServerMetrics instance for tracking connection counts, errors, and processing times
+</ParamField>
+
+### Example
+
+```python
+from audio_processor import AudioProcessor
+from metrics import ServerMetrics
+from websocket_manager import WebSocketManager
+
+metrics = ServerMetrics()
+processor = AudioProcessor(api_key=os.getenv("OPENAI_API_KEY"))
+ws_manager = WebSocketManager(processor, metrics)
+```
+
+## Methods
+
+### handle_connection
+
+```python
+async def handle_connection(self, websocket: WebSocket)
+```
+
+Handles a complete WebSocket connection lifecycle from accept to close.
+
+**Location**: `websocket_manager.py:18-92`
+
+#### Parameters
+
+<ParamField path="websocket" type="WebSocket" required>
+  FastAPI WebSocket instance representing the client connection
+</ParamField>
+
+#### Returns
+
+No return value. Handles the connection until completion or error.
+
+#### Connection Lifecycle
+
+1. **Initialize**
+   - Generates 8-character `connection_id` from UUID
+   - Accepts WebSocket connection
+   - Increments `active_connections` and `total_requests` metrics
+   - Logs connection establishment
+
+2. **Buffer Audio**
+   - Receives binary data chunks via `websocket.receive_bytes()`
+   - Buffers chunks in memory
+   - Tracks total buffered size
+   - Minimum buffer size: 20,000 bytes (~1 second of audio)
+
+3. **Process Audio**
+   - Once minimum size reached, joins buffer chunks
+   - Calls `audio_processor.process_audio()`
+   - Waits for language detection result
+
+4. **Send Response**
+   - Success: Sends JSON with language detection results
+   - Error: Sends JSON with error message
+   - Always includes timestamp and connection_id
+
+5. **Close Connection**
+   - Closes WebSocket
+   - Decrements `active_connections`
+   - Logs connection duration
+   - Logs current metrics
+
+#### Response Formats
+
+**Success Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "language": "en",
+    "confidence": 0.9,
+    "processing_time": 2.34,
+    "connection_id": "a1b2c3d4"
+  },
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "a1b2c3d4"
+}
+```
+
+**Error Response:**
+```json
+{
+  "status": "error",
+  "message": "Error description",
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "a1b2c3d4"
+}
+```
+
+#### Implementation Details
+
+From `websocket_manager.py:29-72`:
+
+```python
+buffer = []
+total_size = 0
+MIN_AUDIO_SIZE = 20000  # Minimum size in bytes (about 1 second of audio)
+
+try:
+    while True:
+        data = await websocket.receive_bytes()
+        if not data:
+            logger.debug(f"[{connection_id}] Received empty data chunk")
+            continue
+
+        buffer.append(data)
+        total_size += len(data)
+        logger.debug(f"[{connection_id}] Received audio chunk, total size: {total_size} bytes")
+        
+        # Only process when we have enough data
+        if total_size >= MIN_AUDIO_SIZE:
+            audio_data = b''.join(buffer)
+            logger.info(f"[{connection_id}] Processing audio data of size: {len(audio_data)} bytes")
+            
+            result = await self.audio_processor.process_audio(
+                audio_data, 
+                self.metrics,
+                connection_id
+            )
+
+            if "error" in result:
+                logger.error(f"[{connection_id}] Processing error: {result['error']}")
+                await websocket.send_json({
+                    "status": "error",
+                    "message": result["error"],
+                    "timestamp": datetime.now().isoformat(),
+                    "connection_id": connection_id
+                })
+                break
+
+            await websocket.send_json({
+                "status": "success",
+                "data": result,
+                "timestamp": datetime.now().isoformat(),
+                "connection_id": connection_id
+            })
+            logger.info(f"[{connection_id}] Language detected: {result['language']} in {result.get('processing_time', 0):.2f}s")
+            break
+```
+
+#### Error Handling
+
+Handles three types of errors:
+
+1. **WebSocketDisconnect**: Client disconnects (logged, metrics updated)
+2. **Processing errors**: Errors from audio processing (error response sent)
+3. **General exceptions**: Unexpected errors (logged, error response sent, connection closed)
+
+All errors increment the metrics error counter and ensure proper cleanup.
+
+#### Example Usage
+
+From `main.py:51-58`:
+
+```python
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time language detection"""
+    connection_start = time.time()
+    await ws_manager.handle_connection(websocket)
+    connection_duration = time.time() - connection_start
+    logger.info(f"WebSocket connection duration: {connection_duration:.2f}s")
+```
+
+## Constants
+
+<ParamField path="MIN_AUDIO_SIZE" type="int" default={20000}>
+  Minimum audio buffer size in bytes before processing. Approximately 1 second of audio at 16 kbps.
+</ParamField>
+
+## Connection Tracking
+
+Each connection receives a unique identifier:
+- Generated from `uuid.uuid4()` and truncated to 8 characters
+- Used in all log messages: `[connection_id] Message`
+- Included in all JSON responses
+- Enables end-to-end request tracing
+
+## Metrics Integration
+
+The manager updates metrics throughout the connection lifecycle:
+
+| Metric | When Updated | How |
+|--------|--------------|-----|
+| `active_connections` | Connection start | +1 |
+| `active_connections` | Connection end | -1 |
+| `total_requests` | Connection start | +1 |
+| `errors` | Processing error | +1 |
+| `processing_times` | Successful processing | Append time |
+
+## Logging
+
+Comprehensive logging at multiple levels:
+- **INFO**: Connection lifecycle, processing results, metrics
+- **DEBUG**: Audio chunk reception, buffer sizes
+- **ERROR**: Processing errors, exceptions
+
+All logs include `connection_id` for correlation.
+
+## Dependencies
+
+```python
+import logging
+import time
+import uuid
+from datetime import datetime
+from fastapi import WebSocket, WebSocketDisconnect
+```

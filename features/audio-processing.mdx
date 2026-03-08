@@ -1,0 +1,412 @@
+---
+title: 'Audio Processing'
+description: 'Deep dive into how LangShazam captures, encodes, and processes audio for language detection'
+icon: 'waveform-lines'
+---
+
+## Overview
+
+LangShazam's audio processing pipeline handles everything from microphone capture to API submission. The system is designed for cross-platform compatibility, particularly ensuring iOS support through careful format selection.
+
+## Audio Pipeline
+
+<Steps>
+  <Step title="Microphone Capture">
+    Browser's MediaDevices API captures raw audio from the user's microphone
+  </Step>
+  
+  <Step title="Real-time Encoding">
+    MediaRecorder encodes audio to MP4 format at 16,000 bits per second
+  </Step>
+  
+  <Step title="Chunking">
+    Audio is split into 4-second chunks before transmission
+  </Step>
+  
+  <Step title="Buffering">
+    Backend buffers chunks until minimum size threshold is met
+  </Step>
+  
+  <Step title="API Submission">
+    Complete audio data is sent to OpenAI's Whisper API for detection
+  </Step>
+</Steps>
+
+## Audio Format Specifications
+
+LangShazam uses specific audio settings optimized for language detection:
+
+<CardGroup cols={2}>
+  <Card title="Format" icon="file-audio">
+    **MP4** - Widely supported, especially on iOS devices
+  </Card>
+  <Card title="Bitrate" icon="gauge">
+    **16,000 bps** - Balanced quality and file size
+  </Card>
+  <Card title="Chunk Interval" icon="clock">
+    **4 seconds** - Optimal for real-time transmission
+  </Card>
+  <Card title="Minimum Size" icon="minimize">
+    **20,000 bytes** - Ensures enough data for processing
+  </Card>
+</CardGroup>
+
+<Warning>
+  MP4 format is critical for iOS compatibility. Other formats like WebM may not work on Safari/iOS browsers.
+</Warning>
+
+## Frontend Audio Capture
+
+### MediaRecorder Setup
+
+The frontend configures MediaRecorder with specific parameters:
+
+```javascript App.js (lines 158-162)
+// Use MP4 format which is widely supported including iOS
+const recorder = new MediaRecorder(stream, {
+  mimeType: 'audio/mp4',
+  audioBitsPerSecond: 16000
+});
+setMediaRecorder(recorder);
+```
+
+### Audio Analysis for Visual Feedback
+
+While recording, the system analyzes audio levels for UI feedback:
+
+```javascript App.js (lines 81-98)
+const audioContext = new AudioContext();
+const source = audioContext.createMediaStreamSource(stream);
+const analyser = audioContext.createAnalyser();
+source.connect(analyser);
+
+// Monitor audio levels
+analyser.fftSize = 256;
+const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+const updateLevel = () => {
+  if (!isListening) return;
+  analyser.getByteFrequencyData(dataArray);
+  const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+  setMicLevel(average / 128);
+  requestAnimationFrame(updateLevel);
+};
+
+updateLevel();
+```
+
+<Note>
+  The audio analysis runs separately from recording and doesn't affect the audio data sent to the server.
+</Note>
+
+### Chunk Collection and Transmission
+
+Audio chunks are collected and sent as they become available:
+
+```javascript App.js (lines 167-172)
+recorder.ondataavailable = async (event) => {
+  if (event.data.size > 0) {
+    console.log("Received audio chunk of size:", event.data.size);
+    ws.send(event.data);
+  }
+};
+```
+
+The recorder starts with a 4-second time slice:
+
+```javascript App.js (line 189)
+recorder.start(4000); // Collect 4 seconds of audio before sending
+```
+
+### Audio Configuration Constants
+
+The frontend defines these audio parameters:
+
+```javascript App.js (lines 24-26)
+const CHUNK_SIZE = 128 * 1024; // 128KB chunks (about 4 seconds of audio)
+const MIN_AUDIO_LENGTH = 4000; // 4 seconds minimum for better accuracy
+const MAX_AUDIO_LENGTH = 15000; // 15 seconds maximum
+```
+
+## Backend Audio Processing
+
+### AudioProcessor Class
+
+The `AudioProcessor` class handles all server-side audio processing:
+
+```python audio_processor.py (lines 10-17)
+class AudioProcessor:
+    """
+    Handles audio processing and OpenAI API interactions.
+    Implements connection tracing for request tracking.
+    """
+    def __init__(self, api_key: str, max_concurrent_calls: int = 3):
+        self.client = OpenAI(api_key=api_key.strip())
+        self.api_semaphore = asyncio.Semaphore(max_concurrent_calls)
+```
+
+<Tip>
+  The semaphore limits concurrent API calls to 3, preventing rate limiting and managing server resources.
+</Tip>
+
+### Rate-Limited API Calls
+
+API calls are rate-limited using an asyncio semaphore:
+
+```python audio_processor.py (lines 19-42)
+async def call_openai_api(self, audio_data: bytes, connection_id: str):
+    """Makes rate-limited calls to OpenAI's API with connection tracing"""
+    start_time = time.time()
+    async with self.api_semaphore:
+        try:
+            logger.info(f"[{connection_id}] Acquired API semaphore")
+            audio_file = io.BytesIO(audio_data)
+            audio_file.name = "audio.mp4"
+
+            logger.info(f"[{connection_id}] Calling OpenAI API")
+            response = await asyncio.to_thread(
+                self.client.audio.transcriptions.create,
+                model="whisper-1",
+                file=audio_file,
+                response_format="verbose_json"
+            )
+            logger.info(response)
+            
+            api_time = time.time() - start_time
+            logger.info(f"[{connection_id}] OpenAI API call completed in {api_time:.2f}s")
+            return response
+        except Exception as e:
+            logger.error(f"[{connection_id}] OpenAI API error: {e}")
+            raise
+```
+
+### Audio Data Preparation
+
+Audio bytes are wrapped in a BytesIO object with the correct filename:
+
+```python audio_processor.py (lines 25-26)
+audio_file = io.BytesIO(audio_data)
+audio_file.name = "audio.mp4"
+```
+
+<Note>
+  The `.name` attribute is crucial - it tells the API what format to expect. Setting it to "audio.mp4" ensures proper processing.
+</Note>
+
+### Processing Pipeline
+
+The main processing method coordinates the entire flow:
+
+```python audio_processor.py (lines 49-71)
+async def process_audio(self, audio_data: bytes, metrics, connection_id: str):
+    """Processes audio data with connection tracing"""
+    start_time = time.time()
+    try:
+        logger.info(f"[{connection_id}] Starting audio processing")
+        response = await self.call_openai_api(audio_data, connection_id)
+        
+        total_time = time.time() - start_time
+        metrics.processing_times.append(total_time)
+        logger.info(f"[{connection_id}] Total processing time: {total_time:.2f}s")
+        
+        return {
+            "language": response.language,
+            "confidence": 0.9,
+            "processing_time": total_time,
+            "connection_id": connection_id
+        }
+
+    except Exception as e:
+        metrics.errors += 1
+        logger.error(f"[{connection_id}] Error processing audio: {e}")
+        return {"error": str(e), "connection_id": connection_id}
+    finally:
+        gc.collect()
+```
+
+### Memory Management
+
+Garbage collection is explicitly called after processing to free memory:
+
+```python audio_processor.py (line 72)
+finally:
+    gc.collect()
+```
+
+## Buffering Strategy
+
+The WebSocket manager buffers incoming audio chunks:
+
+```python websocket_manager.py (lines 29-47)
+buffer = []
+total_size = 0
+MIN_AUDIO_SIZE = 20000  # Minimum size in bytes (about 1 second of audio)
+
+try:
+    while True:
+        data = await websocket.receive_bytes()
+        if not data:
+            logger.debug(f"[{connection_id}] Received empty data chunk")
+            continue
+
+        buffer.append(data)
+        total_size += len(data)
+        logger.debug(f"[{connection_id}] Received audio chunk, total size: {total_size} bytes")
+        
+        # Only process when we have enough data
+        if total_size >= MIN_AUDIO_SIZE:
+            audio_data = b''.join(buffer)
+            logger.info(f"[{connection_id}] Processing audio data of size: {len(audio_data)} bytes")
+```
+
+<Accordion title="Why Buffer Instead of Processing Immediately?">
+  Buffering ensures:
+  - Sufficient audio context for accurate detection
+  - Reduced API calls (cost savings)
+  - Better accuracy with longer audio samples
+  - Prevention of processing incomplete or corrupted chunks
+</Accordion>
+
+## Configuration Settings
+
+All audio processing parameters are centralized in the backend configuration:
+
+```python settings.py (lines 25-32)
+# Audio processing settings
+AUDIO_CONFIG = {
+    "min_audio_size": 20000,  # Minimum size in bytes
+    "chunk_size": 128 * 1024,  # 128KB chunks
+    "min_audio_length": 4000,  # 4 seconds minimum
+    "max_audio_length": 15000,  # 15 seconds maximum
+    "audio_bits_per_second": 16000
+}
+```
+
+## OpenAI API Configuration
+
+The Whisper model configuration:
+
+```python settings.py (lines 34-38)
+# OpenAI settings
+OPENAI_CONFIG = {
+    "model": "whisper-1",
+    "max_concurrent_calls": 3
+}
+```
+
+API calls use these parameters:
+
+```python audio_processor.py (lines 32-36)
+response = await asyncio.to_thread(
+    self.client.audio.transcriptions.create,
+    model="whisper-1",
+    file=audio_file,
+    response_format="verbose_json"
+)
+```
+
+## Performance Considerations
+
+<CardGroup cols={2}>
+  <Card title="Concurrent Processing" icon="layer-group">
+    Semaphore limits to 3 concurrent API calls to prevent rate limiting
+  </Card>
+  <Card title="Async I/O" icon="clock-rotate-left">
+    All processing is async to handle multiple connections efficiently
+  </Card>
+  <Card title="Memory Cleanup" icon="broom">
+    Explicit garbage collection after each request prevents memory leaks
+  </Card>
+  <Card title="Chunked Streaming" icon="stream">
+    4-second chunks balance latency and audio quality
+  </Card>
+</CardGroup>
+
+## Error Handling
+
+The audio processor includes comprehensive error handling:
+
+```python audio_processor.py (lines 43-47)
+except Exception as e:
+    logger.error(f"[{connection_id}] OpenAI API error: {e}")
+    raise
+finally:
+    logger.debug(f"[{connection_id}] Released API semaphore")
+```
+
+Errors are propagated with context:
+
+```python audio_processor.py (lines 67-70)
+except Exception as e:
+    metrics.errors += 1
+    logger.error(f"[{connection_id}] Error processing audio: {e}")
+    return {"error": str(e), "connection_id": connection_id}
+```
+
+## Metrics and Monitoring
+
+The system tracks processing performance:
+
+- **Processing Times**: Recorded for each request
+- **Error Count**: Incremented on failures
+- **API Call Duration**: Logged separately from total processing time
+- **Connection Tracing**: Every log includes connection ID
+
+```python audio_processor.py (lines 56-58)
+total_time = time.time() - start_time
+metrics.processing_times.append(total_time)
+logger.info(f"[{connection_id}] Total processing time: {total_time:.2f}s")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use MP4 Format">
+    Always use MP4 for maximum compatibility across browsers and devices
+  </Step>
+  
+  <Step title="Set Appropriate Bitrate">
+    16,000 bps balances quality and bandwidth - don't go higher unless needed
+  </Step>
+  
+  <Step title="Implement Minimum Thresholds">
+    Require minimum audio duration/size before processing to ensure accuracy
+  </Step>
+  
+  <Step title="Rate Limit API Calls">
+    Use semaphores or similar mechanisms to prevent overwhelming the API
+  </Step>
+  
+  <Step title="Clean Up Resources">
+    Always stop media tracks and close connections when done
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Audio not being captured">
+    - Check microphone permissions in browser
+    - Verify HTTPS connection (required for getUserMedia)
+    - Check browser console for MediaDevices errors
+  </Accordion>
+  
+  <Accordion title="Detection takes too long">
+    - Check network connectivity
+    - Verify audio chunks are being sent (check WebSocket messages)
+    - Review backend logs for API delays
+    - Consider reducing max_concurrent_calls if rate limited
+  </Accordion>
+  
+  <Accordion title="Format not supported errors">
+    - Ensure MP4 format is being used
+    - Check MediaRecorder.isTypeSupported('audio/mp4') in browser
+    - Review audio_file.name is set to "audio.mp4"
+  </Accordion>
+  
+  <Accordion title="iOS-specific issues">
+    - MP4 format is required for iOS
+    - Ensure user gesture initiated the recording (iOS requirement)
+    - Test on actual device, not just simulator
+  </Accordion>
+</AccordionGroup>

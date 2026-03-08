@@ -1,0 +1,88 @@
+---
+title: 'API Overview'
+description: 'Introduction to the LangShazam API for real-time spoken language detection'
+---
+
+## Introduction
+
+The LangShazam API provides real-time spoken language detection through a WebSocket-based service. Send audio data and receive language identification results powered by OpenAI's Whisper model.
+
+## Base URL
+
+The API is accessible through multiple regional endpoints for optimal performance:
+
+```
+wss://languagedetection-9l89.onrender.com
+wss://languagedetection-virginia.onrender.com
+wss://languagedetection-ohio.onrender.com
+wss://languagedetection-europe.onrender.com
+wss://languagedetection-singapore.onrender.com
+```
+
+## Authentication
+
+No authentication is required for the WebSocket endpoints. The service uses an internal OpenAI API key for processing audio data.
+
+## Core Endpoints
+
+<Card title="WebSocket Connection" icon="plug" href="/api/websocket">
+  Real-time audio streaming endpoint at `/ws`
+</Card>
+
+<Card title="Metrics" icon="chart-line" href="/api/metrics">
+  Server health and performance metrics at `/metrics`
+</Card>
+
+## Quick Start
+
+```javascript
+const ws = new WebSocket('wss://languagedetection-9l89.onrender.com/ws');
+
+ws.onopen = () => {
+  // Send audio data as binary
+  ws.send(audioBuffer);
+};
+
+ws.onmessage = (event) => {
+  const response = JSON.parse(event.data);
+  console.log('Detected language:', response.data.language);
+};
+```
+
+## Response Format
+
+All responses follow a standardized JSON format:
+
+<ResponseField name="status" type="string" required>
+  Response status: `success` or `error`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Result data when status is `success`
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message when status is `error`
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp of the response
+</ResponseField>
+
+<ResponseField name="connection_id" type="string" required>
+  Unique identifier for the connection (8-character UUID)
+</ResponseField>
+
+## Rate Limits
+
+The service supports a maximum of 3 concurrent OpenAI API calls. Additional requests are queued automatically.
+
+## CORS Configuration
+
+The following origins are allowed:
+- `https://www.langshazam.com`
+- `https://langshazam.com`
+- `http://localhost:3000`
+- `http://localhost:5173`
+- `http://127.0.0.1:3000`
+- `http://127.0.0.1:5173`

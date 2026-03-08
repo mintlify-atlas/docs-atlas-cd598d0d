@@ -1,0 +1,259 @@
+---
+title: 'Real-Time Detection'
+description: 'Learn how LangShazam detects spoken languages in real-time from microphone input'
+icon: 'waveform'
+---
+
+## Overview
+
+LangShazam's real-time detection system captures audio from your microphone, processes it through a WebSocket connection, and returns the detected language within seconds. The system is optimized for accuracy while maintaining low latency.
+
+## How It Works
+
+<Steps>
+  <Step title="Microphone Capture">
+    The browser requests access to your microphone using the MediaDevices API. Audio is captured at 16,000 bits per second in MP4 format for maximum compatibility.
+  </Step>
+  
+  <Step title="Audio Buffering">
+    Audio chunks are collected for at least 4 seconds before processing. This ensures enough context for accurate language detection.
+  </Step>
+  
+  <Step title="WebSocket Transmission">
+    Audio data is streamed to the backend via WebSocket connection, allowing for continuous real-time communication.
+  </Step>
+  
+  <Step title="Language Detection">
+    The backend processes the audio using OpenAI's Whisper API and returns the detected language along with processing metrics.
+  </Step>
+</Steps>
+
+## Audio Requirements
+
+The detection system has specific requirements to ensure accuracy:
+
+<CardGroup cols={2}>
+  <Card title="Minimum Duration" icon="clock">
+    **4 seconds** of audio required for reliable detection
+  </Card>
+  <Card title="Maximum Duration" icon="hourglass">
+    **15 seconds** maximum to prevent timeout issues
+  </Card>
+  <Card title="Minimum Data Size" icon="database">
+    **20,000 bytes** (~1 second) before backend processing begins
+  </Card>
+  <Card title="Audio Format" icon="file-audio">
+    **MP4** format at **16,000 bps** for cross-platform compatibility
+  </Card>
+</CardGroup>
+
+## Frontend Implementation
+
+Here's how the detection flow is implemented in the frontend:
+
+### Starting Detection
+
+The `startListening` function in `App.js` initiates the detection process:
+
+```javascript App.js (lines 68-98)
+const startListening = async () => {
+  try {
+    if (!serverUrl) {
+      throw new Error('Server not ready. Please try again in a moment.');
+    }
+
+    setLanguage('');
+    setAudioBuffer([]);
+    
+    // Request microphone access
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    setIsListening(true);
+    setIsRequestingPermission(false);
+    
+    // Set up audio analysis for visual feedback
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    source.connect(analyser);
+
+    // Monitor audio levels
+    analyser.fftSize = 256;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    const updateLevel = () => {
+      if (!isListening) return;
+      analyser.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+      setMicLevel(average / 128);
+      requestAnimationFrame(updateLevel);
+    };
+    
+    updateLevel();
+```
+
+### MediaRecorder Configuration
+
+The audio is captured using MediaRecorder with specific settings:
+
+```javascript App.js (lines 158-172)
+// Use MP4 format which is widely supported including iOS
+const recorder = new MediaRecorder(stream, {
+  mimeType: 'audio/mp4',
+  audioBitsPerSecond: 16000
+});
+setMediaRecorder(recorder);
+
+let recordingStartTime = Date.now();
+let totalAudioSize = 0;
+
+recorder.ondataavailable = async (event) => {
+  if (event.data.size > 0) {
+    console.log("Received audio chunk of size:", event.data.size);
+    ws.send(event.data);
+  }
+};
+```
+
+### Handling Detection Results
+
+When the server responds with a detection result:
+
+```javascript App.js (lines 174-187)
+ws.onmessage = (event) => {
+  console.log("Received message from server:", event.data);
+  const response = JSON.parse(event.data);
+  if (response.status === 'success') {
+    setLanguage(response.data.language);
+    showToast(`Language detected: ${response.data.language}`, 'success');
+  } else {
+    setError(response.message);
+    showToast(response.message, 'error');
+  }
+  setIsListening(false);
+  stream.getTracks().forEach(track => track.stop());
+  ws.close();
+};
+```
+
+## Timing Parameters
+
+The system uses several timing constants defined in the frontend:
+
+```javascript App.js (lines 24-26)
+const CHUNK_SIZE = 128 * 1024; // 128KB chunks (about 4 seconds of audio)
+const MIN_AUDIO_LENGTH = 4000; // 4 seconds minimum for better accuracy
+const MAX_AUDIO_LENGTH = 15000; // 15 seconds maximum
+```
+
+And in the backend configuration:
+
+```python settings.py (lines 26-32)
+AUDIO_CONFIG = {
+    "min_audio_size": 20000,  # Minimum size in bytes
+    "chunk_size": 128 * 1024,  # 128KB chunks
+    "min_audio_length": 4000,  # 4 seconds minimum
+    "max_audio_length": 15000,  # 15 seconds maximum
+    "audio_bits_per_second": 16000
+}
+```
+
+<Note>
+  The 4-second minimum ensures the AI model has enough context to accurately identify the language. Shorter clips may result in misdetection.
+</Note>
+
+## Backend Processing Flow
+
+When audio data arrives at the backend, it follows this flow:
+
+```python websocket_manager.py (lines 29-53)
+buffer = []
+total_size = 0
+MIN_AUDIO_SIZE = 20000  # Minimum size in bytes (about 1 second of audio)
+
+try:
+    while True:
+        data = await websocket.receive_bytes()
+        if not data:
+            logger.debug(f"[{connection_id}] Received empty data chunk")
+            continue
+
+        buffer.append(data)
+        total_size += len(data)
+        logger.debug(f"[{connection_id}] Received audio chunk, total size: {total_size} bytes")
+        
+        # Only process when we have enough data
+        if total_size >= MIN_AUDIO_SIZE:
+            audio_data = b''.join(buffer)
+            logger.info(f"[{connection_id}] Processing audio data of size: {len(audio_data)} bytes")
+            
+            result = await self.audio_processor.process_audio(
+                audio_data, 
+                self.metrics,
+                connection_id
+            )
+```
+
+## Response Format
+
+Successful detections return this JSON structure:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "language": "en",
+    "confidence": 0.9,
+    "processing_time": 1.23,
+    "connection_id": "abc12345"
+  },
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "abc12345"
+}
+```
+
+Errors are returned in this format:
+
+```json
+{
+  "status": "error",
+  "message": "Error description",
+  "timestamp": "2026-03-08T10:30:45.123456",
+  "connection_id": "abc12345"
+}
+```
+
+## Performance Metrics
+
+The system tracks several performance metrics:
+
+- **Connection ID**: Unique identifier for request tracing
+- **Processing Time**: Total time from receiving audio to returning results
+- **Active Connections**: Number of concurrent WebSocket connections
+- **Total Requests**: Cumulative count of all detection requests
+
+<Tip>
+  For best results, speak clearly and ensure background noise is minimal. The system works with most languages, but clarity improves accuracy.
+</Tip>
+
+## Visual Feedback
+
+The frontend provides real-time visual feedback during detection:
+
+- **Waveform Animation**: Shows that recording is active
+- **Microphone Level Meter**: Displays input audio levels
+- **Status Messages**: Keeps users informed of the current state
+- **Toast Notifications**: Confirms successful detection or displays errors
+
+See the implementation in `App.js:250-258`:
+
+```javascript
+{isListening && (
+  <>
+    <WaveAnimation isRecording={isListening} />
+    <MicrophoneLevel level={micLevel} />
+    <div className="status">
+      Recording audio... Please speak clearly
+    </div>
+  </>
+)}
+```
