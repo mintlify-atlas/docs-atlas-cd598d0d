@@ -9,6 +9,10 @@ The servers module defines all available server regions, their WebSocket endpoin
 
 **Location**: `backend/src/config/servers.py`
 
+<Warning>
+**Current Deployment**: The production frontend currently uses a hardcoded AWS Kubernetes endpoint (`wss://3.149.10.154.nip.io/ws`) defined in `ServerDiscovery.js`, not these Render.com endpoints. The `SERVER_REGIONS` configuration provides alternative deployment options and a foundation for implementing dynamic multi-region routing in the future.
+</Warning>
+
 ## Server Regions Dictionary
 
 ```python

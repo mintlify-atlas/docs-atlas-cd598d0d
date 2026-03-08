@@ -9,15 +9,15 @@ The LangShazam API provides real-time spoken language detection through a WebSoc
 
 ## Base URL
 
-The API is accessible through multiple regional endpoints for optimal performance:
+The production API is deployed on AWS Kubernetes:
 
 ```
-wss://languagedetection-9l89.onrender.com
-wss://languagedetection-virginia.onrender.com
-wss://languagedetection-ohio.onrender.com
-wss://languagedetection-europe.onrender.com
-wss://languagedetection-singapore.onrender.com
+wss://3.149.10.154.nip.io/ws
 ```
+
+<Note>
+The frontend automatically connects to this endpoint via the `ServerDiscovery` service. See [Server Configuration](/api/servers) for alternative deployment endpoints.
+</Note>
 
 ## Authentication
 
@@ -36,7 +36,7 @@ No authentication is required for the WebSocket endpoints. The service uses an i
 ## Quick Start
 
 ```javascript
-const ws = new WebSocket('wss://languagedetection-9l89.onrender.com/ws');
+const ws = new WebSocket('wss://3.149.10.154.nip.io/ws');
 
 ws.onopen = () => {
   // Send audio data as binary
